@@ -53,6 +53,8 @@
     +'.bw-slopok{background:#E4F7EC;color:#1B7A46}.bw-slopbad{background:#FDECEF;color:#B23A54}'
     +'.bw-tpl{background:#E3ECFF;color:#20386A}'
     +'.bw-fill{background:#123A9E;color:#fff;border:0;border-radius:99px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;margin-left:auto}'
+    +'.bw-copy{background:#EEF3FD;color:#20386A;border:1px solid #cddaf0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;cursor:pointer}'
+    +'#bw_back{position:fixed;left:14px;bottom:14px;z-index:9999;background:#fff;color:#123A9E;border:1px solid #cddaf0;border-radius:99px;padding:11px 18px;font-size:13px;font-weight:800;box-shadow:0 12px 30px -12px rgba(18,58,158,.35);cursor:pointer}'
     +'.bw-warn{background:#FDECEF;border:1px solid #F3B6C2;color:#B23A54;border-radius:12px;padding:12px;font-size:13px}'
     +'.bw-dd{position:relative}'
     +'.bw-ddbtn{width:100%;text-align:left;background:#F4F8FF;border:1px solid #cddaf0;border-radius:10px;color:#0B1B3A;padding:12px;font-size:15px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:inherit}'
@@ -144,19 +146,23 @@
     let out='<div class="bw-card"><div class="bw-ok">✓ '+vs.length+' version(s) · '+E(res.type_label||'')+' · run $'+E(res.run_cost_usd)+' · month $'+E(res.month_spent_usd)+'</div></div>';
     vs.forEach(function(v,i){
       const id='v'+i; window.__bwStore[id]=v;
-      const slop=v.slop||[];
-      const slopTag=slop.length?'<span class="bw-tag bw-slopbad">⚠ slop: '+E(slop.join(', '))+'</span>':'<span class="bw-tag bw-slopok">✓ clean</span>';
+      const slop=v.slop||[], inv=v.invented||[];
+      const slopTag=slop.length?'<span class="bw-tag bw-slopbad">&#9888; slop: '+E(slop.join(', '))+'</span>':'<span class="bw-tag bw-slopok">&#10003; clean</span>';
+      const invTag=inv.length?'<span class="bw-tag bw-slopbad">&#9888; numbers not in your input: '+E(inv.slice(0,4).join(', '))+' &mdash; verify or rewrite</span>':'';
       const fix=v.critique?'<div class="bw-fix"><b>loop fixed:</b> '+E(v.critique)+'</div>':'';
       out+='<div class="bw-card">'
         +'<div class="bw-lens">'+E(v.lens||('version '+(i+1)))+'</div>'
         +'<div class="bw-post">'+E(v.draft||'')+'</div>'
         +fix
-        +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'—')+'</span>'+slopTag
-        +'<button class="bw-fill" onclick="__bwFill(\''+id+'\')">fill the '+E(v.template||'template')+' →</button></div>'
+        +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'&mdash;')+'</span>'+slopTag+invTag
+        +'<button class="bw-copy" data-id="'+id+'">copy</button>'
+        +'<button class="bw-fill" onclick="__bwFill(\''+id+'\')">fill the '+E(v.template||'template')+' &#8594;</button></div>'
         +'</div>';
     });
     $('bw_out').innerHTML=out;
   }
+
+  function fallbackCopy(t){ var ta=document.createElement('textarea'); ta.value=t; ta.style.cssText='position:fixed;left:-999px'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} ta.remove(); }
 
   window.__bwFill=function(id){
     const v=(window.__bwStore||{})[id]; if(!v)return;
@@ -173,6 +179,12 @@
     document.body.classList.remove('bmode');
     document.querySelectorAll('.screen').forEach(function(x){x.classList.remove('on');});
     var ed=$('editor'); if(ed)ed.classList.add('on');
+    if(ed && !document.getElementById('bw_back')){
+      var bp=document.createElement('button'); bp.id='bw_back'; bp.type='button';
+      bp.innerHTML='&#8592; back to drafts';
+      bp.onclick=function(){ if(typeof goWriter==='function') goWriter(); };
+      ed.appendChild(bp);
+    }
     window.scrollTo(0,0);
   };
 
@@ -190,6 +202,12 @@
     window.goWriter=function(){ orig(); setTimeout(mountIntoWriter,30); };
   }
   document.addEventListener('click',function(e){
+    var cp=e.target.closest?e.target.closest('.bw-copy'):null;
+    if(cp){ var v=(window.__bwStore||{})[cp.getAttribute('data-id')]; var txt=v?(v.draft||''):'';
+      var done=function(){ cp.textContent='copied \u2713'; setTimeout(function(){cp.textContent='copy';},1400); };
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done,function(){ fallbackCopy(txt); done(); }); }
+      else { fallbackCopy(txt); done(); }
+      e.stopPropagation(); return; }
     var tx=e.target.closest?e.target.closest('.bw-thx'):null;
     if(tx){ shots.splice(+tx.getAttribute('data-i'),1); drawThumbs(); e.stopPropagation(); return; }
     var opt=e.target.closest?e.target.closest('.bw-ddo'):null;
