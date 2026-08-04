@@ -543,6 +543,8 @@ SLOP_TELLS = {
    r"isn'?t it\?*\s*$", r"or is it just me"],
  "cliche-phrase": [r"the whole thing", r"quietly build", r"sleeping on this", r"a graveyard",
    r"game.?chang", r"to the moon", r"which side are you on", r"the network is the", r"seamless", r"revolutionary"],
+ "closer-cliche": [r"nobody wants to say( it)?( out loud)?", r"everyone'?s doing it", r"say the quiet part",
+   r"that'?s the (funny|fact|truth|part)", r"let that sink", r"read that again", r"and somehow that'?s"],
 }
 def _slopcheck(text):
     t=(text or "").lower(); hits=[]
@@ -567,6 +569,18 @@ def _factcheck(draft, source_text):
         alien.append(n)
     return alien
 
+_EXP_PATS=[r"\bi (spent|watched|saw|lost|made|realized|noticed|met|sat|remember)\b",
+ r"\b(yesterday|last (week|night|month|year))\b", r"\b\d+\s*am\b", r"\bbroke (something )?in me\b",
+ r"\bi('ve| have) (been|seen|watched)\b", r"\bi was (there|watching|up)\b"]
+def _expcheck(draft, usertext):
+    """first-person experiential claims in the draft that the user's own text never gave = fabricated memoir"""
+    u=(usertext or '').lower(); d=(draft or '').lower(); hits=[]
+    for p in _EXP_PATS:
+        m=_slopre.search(p,d)
+        if m and not _slopre.search(p,u):
+            hits.append(m.group(0))
+    return hits[:3]
+
 # content-type -> the ONE real template it fills, and that template's slot schema
 CTYPE_TEMPLATE = {"deepdive":"threadcover","article":"threadcover","alpha":"bignum",
  "educational":"stack","airdrop":"stack","banger":"quote","viral":"quote","update":"bignum"}
@@ -588,6 +602,25 @@ HARD_FACT_RULE = ("HARD FACT RULE (overrides everything, including the rubric an
  "met with an invented fact is a FAIL, not a pass. If a lens calls for a personal anecdote and none was provided, change "
  "the angle to an honest observation of what IS given. If the facts are too thin to write anything true, return the "
  "need-facts JSON instead of inventing.")
+
+def _call_api(sys_prompt, content):
+    """one Haiku call -> (clean_text, real_cost). raises on transport errors."""
+    body = json.dumps({'model': MODEL, 'max_tokens': MAX_TOK, 'system': sys_prompt,
+                       'messages': [{'role': 'user', 'content': content}]}).encode()
+    req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={
+        'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01'})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        j = json.loads(r.read().decode())
+    usage = j.get('usage', {})
+    cost = (usage.get('input_tokens', 900) * PRICE['in'] + usage.get('output_tokens', MAX_TOK) * PRICE['out']) / 1_000_000
+    text = ''.join(b.get('text', '') for b in j.get('content', []) if b.get('type') == 'text')
+    return text.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip(), cost
+
+def _verify(v, srctext, usertext):
+    v['slop'] = _slopcheck(v.get('draft', ''))
+    v['invented'] = _factcheck(v.get('draft', ''), srctext)
+    v['fab'] = _expcheck(v.get('draft', ''), usertext)
+    return v
 
 def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     """One topic -> several studied LENSES, each run through the critique loop, each with its real-template slots filled. One API call."""
@@ -623,16 +656,20 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
         "For EACH version, also fill the graphic. Template: '%s'. Slots: %s. "
         "Fill every slot FROM the final post - short, punchy, real, same no-slop bar.\n\n"
         "Return STRICT JSON, no prose, no markdown fences:\n"
-        '{"versions":[{"lens":"<lens name>","draft":"<the FINAL revised post>","critique":"<1 line: what the loop fixed>",'
+        '{"source":"<one line: the concrete facts/numbers you are using, verbatim from the screenshots/topic - your receipts>",'
+        '"versions":[{"lens":"<lens name>","draft":"<the FINAL revised post>","critique":"<1 line: what the loop fixed>",'
         '"template":"%s","slots":{<exactly the slot keys above, as key:value>},"image":""}]}. '
         'If you do NOT have enough real facts to write without inventing anything, return exactly '
         '{"versions":[],"need":"<one short line naming the specific facts you need>"} and no other text.'
         % (n, fmt, lens_txt, tpl, schema, tpl))
     if images:
-        sys_prompt += ("\n\nSCREENSHOTS ATTACHED: they contain someone's existing content (a post, article, or notes). "
-            "First read them fully - that content is the SOURCE MATERIAL, even if the topic text just says 'rewrite this'. "
-            "REWRITE it through the lenses in HIS voice: keep the real facts and numbers from the screenshots, "
-            "drop the original's phrasing entirely, same no-slop bar. Never copy sentences.")
+        sys_prompt += ("\n\nSCREENSHOTS ATTACHED: they are SOMEONE ELSE'S post/content. You are writing HIS reaction or remix - "
+            "he did NOT live it, so NEVER write a first-person experience about it ('i spent', 'i watched', 'i realized', "
+            "'last week', '2am') unless the topic text itself gave that experience. Allowed stances only: "
+            "(a) sharpen the same truth in fewer, harder words  (b) extend it with one implication the original missed  "
+            "(c) disagree with one specific reason  (d) connect it concretely to facts from the topic/brief. "
+            "If your version says nothing the original didn't already say, it FAILS - add his angle or say less. "
+            "Keep the original's real numbers exactly; never alter or invent numbers.")
     user = "CONTENT TYPE: %s\nTOPIC:\n%s" % (TYPE_LABEL.get(ctype, ctype), topic or "(rewrite the attached content)")
     if brief:
         user += "\n\nBRIEF (real facts to use, do not invent beyond this):\n" + json.dumps(brief, ensure_ascii=False)[:3500]
@@ -642,23 +679,13 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
             'media_type': im.get('media_type', 'image/jpeg'), 'data': im.get('data', '')}})
     content.append({'type': 'text', 'text': user})
 
-    body = json.dumps({'model': MODEL, 'max_tokens': MAX_TOK, 'system': sys_prompt,
-                       'messages': [{'role': 'user', 'content': content}]}).encode()
-    req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={
-        'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01'})
     try:
-        with urllib.request.urlopen(req, timeout=90) as r:
-            j = json.loads(r.read().decode())
+        text, real = _call_api(sys_prompt, content)
     except urllib.error.HTTPError as e:
         return {'error': 'api_http', 'message': '%s: %s' % (e.code, e.read().decode()[:300])}
     except Exception as e:
         return {'error': 'api_fail', 'message': str(e)[:300]}
-
-    usage = j.get('usage', {})
-    real = (usage.get('input_tokens', 900) * PRICE['in'] + usage.get('output_tokens', MAX_TOK) * PRICE['out']) / 1_000_000
     spent = _spend_add(real)
-    text = ''.join(b.get('text', '') for b in j.get('content', []) if b.get('type') == 'text')
-    text = text.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip()
     try:
         parsed = json.loads(text); versions = parsed.get('versions', [])
     except Exception:
@@ -669,16 +696,53 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     if not versions:
         need = parsed.get('need') or parsed.get('message') or ''
         return {'error': 'need_facts', 'message': need or 'the writer needs real facts on this first.'}
-    srctext = (topic or '') + ' ' + (json.dumps(brief, ensure_ascii=False) if brief else '')
+    source_line = str(parsed.get('source', '') or '')
+    srctext = (topic or '') + ' ' + (json.dumps(brief, ensure_ascii=False) if brief else '') + ' ' + source_line
+    usertext = (topic or '') + ' ' + (json.dumps(brief, ensure_ascii=False) if brief else '')
     for v in versions:
-        v['slop'] = _slopcheck(v.get('draft', ''))
-        v['invented'] = ([] if images else _factcheck(v.get('draft', ''), srctext))
+        _verify(v, srctext, usertext)
         v.setdefault('template', CTYPE_TEMPLATE.get(ctype, 'quote'))
         v.setdefault('slots', {})
         v.setdefault('critique', '')
+
+    # ---- SELF-CORRECTION PASS: flagged drafts get ONE rewrite naming their exact violations ----
+    fix_cost = 0.0
+    flagged_idx = [i for i, v in enumerate(versions) if v['slop'] or v['invented'] or v['fab']]
+    if flagged_idx and _spend_ok(est)[0]:
+        probs = []
+        for i in flagged_idx:
+            v = versions[i]; items = []
+            if v['invented']: items.append('numbers NOT in the source (remove or replace with allowed ones): %s' % ', '.join(v['invented'][:6]))
+            if v['fab']: items.append('fabricated first-person experience he never lived (remove entirely): %s' % ', '.join('"%s"' % f for f in v['fab']))
+            if v['slop']: items.append('slop tells (rephrase without them): %s' % ', '.join(v['slop']))
+            probs.append('DRAFT %d (lens "%s"):\n%s\nVIOLATIONS:\n- %s' % (i, v.get('lens', ''), v.get('draft', ''), '\n- '.join(items)))
+        fix_sys = (sys_prompt + "\n\nCORRECTION PASS: the drafts below FAILED verification. Rewrite each one removing every "
+            "violation listed. Do NOT add any new number and do NOT add any first-person experience. Keep the same lens, "
+            "stance, and his voice. Also refill the slots from the fixed draft. "
+            'Return STRICT JSON only: {"versions":[{"i":<draft index>,"draft":"<fixed post>","slots":{<same slot keys>}}]}')
+        fix_user = ('ONLY these facts/numbers are allowed:\n%s\n\n%s' % (srctext[:1500], '\n\n'.join(probs)))
+        try:
+            t2, fix_cost = _call_api(fix_sys, fix_user)
+            _spend_add(fix_cost)
+            p2 = json.loads(t2)
+            for fv in p2.get('versions', []):
+                idx = fv.get('i')
+                if not (isinstance(idx, int) and 0 <= idx < len(versions) and fv.get('draft')): continue
+                cand = dict(versions[idx]); cand['draft'] = fv['draft']
+                if isinstance(fv.get('slots'), dict) and fv['slots']: cand['slots'] = fv['slots']
+                _verify(cand, srctext, usertext)
+                before = len(versions[idx]['slop']) + len(versions[idx]['invented']) + len(versions[idx]['fab'])
+                after = len(cand['slop']) + len(cand['invented']) + len(cand['fab'])
+                if after < before:
+                    cand['fixed'] = True
+                    cand['fixnote'] = 'caught %d issue%s, rewrote itself' % (before, 's' if before != 1 else '')
+                    versions[idx] = cand
+        except Exception:
+            pass  # correction is best-effort; flagged originals stay honestly flagged
+
     return {'type': ctype, 'type_label': TYPE_LABEL.get(ctype, ctype), 'versions': versions,
-            'template': CTYPE_TEMPLATE.get(ctype, 'quote'),
-            'run_cost_usd': round(real, 4), 'month_spent_usd': spent}
+            'template': CTYPE_TEMPLATE.get(ctype, 'quote'), 'source': source_line,
+            'run_cost_usd': round(real + fix_cost, 4), 'month_spent_usd': round(spent + fix_cost, 4)}
 
 
 # ==================== THE SERVER ====================
