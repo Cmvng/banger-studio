@@ -1,0 +1,2 @@
+# The web server + boss use only Python standard library — nothing to install for those.
+# This file is here so Railway detects Python. Add packages only if you extend the worker.
