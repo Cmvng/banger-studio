@@ -1,6 +1,6 @@
-# Runs the Python worker, which serves BOTH the studio app (/app) and the worker page (/).
+# Single-file worker. Serves the studio app at /app and the worker page at /.
 FROM python:3.11-slim
 WORKDIR /app
 COPY . /app
 EXPOSE 8080
-CMD ["python", "worker/server.py"]
+CMD ["python", "app.py"]
