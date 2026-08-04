@@ -3,7 +3,29 @@
   const $ = id => document.getElementById(id);
   const NL = String.fromCharCode(10);
   function E(x){return (window.esc?esc(x):String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));}
-  window.__bwHasBrief=false; window.__bwStore={};
+  window.__bwHasBrief=false; window.__bwStore={}; let shots=[];
+  function addShots(files){
+    [].slice.call(files,0,3-shots.length).forEach(function(f){
+      var rd=new FileReader();
+      rd.onload=function(){ var im=new Image(); im.onload=function(){
+        var s=Math.min(1,1100/im.width);
+        var c=document.createElement('canvas'); c.width=Math.round(im.width*s); c.height=Math.round(im.height*s);
+        c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+        shots.push(c.toDataURL('image/jpeg',0.82)); drawThumbs();
+      }; im.src=rd.result; };
+      rd.readAsDataURL(f);
+    });
+  }
+  function drawThumbs(){ var t=$('bw_thumbs'); if(!t)return;
+    t.innerHTML=shots.map(function(s,i){return '<div class="bw-th"><img src="'+s+'"><button type="button" class="bw-thx" data-i="'+i+'">&times;</button></div>';}).join('');
+  }
+  const TYPE_OPTS=[['deepdive','deep-dive'],['alpha','alpha / call'],['update','update'],['airdrop','airdrop / how-to'],['educational','educational'],['banger','banger'],['viral','viral'],['article','article']];
+  const N_OPTS=[['2','2'],['1','1'],['3','3']];
+  function ddHTML(id,opts,val){
+    var cur=opts.find(function(o){return o[0]===val;})||opts[0];
+    var items=opts.map(function(o){return '<div class="bw-ddo'+(o[0]===val?' sel':'')+'" data-v="'+E(o[0])+'">'+E(o[1])+'</div>';}).join('');
+    return '<div class="bw-dd" id="'+id+'"><button type="button" class="bw-ddbtn" data-v="'+E(cur[0])+'">'+E(cur[1])+'<span class="bw-ddcar">&#9662;</span></button><div class="bw-ddlist">'+items+'</div></div>';
+  }
 
   function styles(){
     if($('bw_style'))return;
@@ -32,6 +54,21 @@
     +'.bw-tpl{background:#E3ECFF;color:#20386A}'
     +'.bw-fill{background:#123A9E;color:#fff;border:0;border-radius:99px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;margin-left:auto}'
     +'.bw-warn{background:#FDECEF;border:1px solid #F3B6C2;color:#B23A54;border-radius:12px;padding:12px;font-size:13px}'
+    +'.bw-dd{position:relative}'
+    +'.bw-ddbtn{width:100%;text-align:left;background:#F4F8FF;border:1px solid #cddaf0;border-radius:10px;color:#0B1B3A;padding:12px;font-size:15px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:inherit}'
+    +'.bw-ddcar{color:#5D7BB8;font-size:12px;margin-left:8px}'
+    +'.bw-ddlist{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #cddaf0;border-radius:12px;box-shadow:0 18px 40px -12px rgba(18,58,158,.28);z-index:60;overflow:hidden;max-height:340px;overflow-y:auto}'
+    +'.bw-dd.open .bw-ddlist{display:block}'
+    +'.bw-ddo{padding:13px 14px;font-size:15px;color:#20386A;cursor:pointer;border-bottom:1px solid #eef3fd}'
+    +'.bw-ddo:last-child{border-bottom:0}'
+    +'.bw-ddo.sel{background:#EEF3FD;font-weight:800;color:#123A9E}'
+    +'.bw-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}'
+    +'.bw-th{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1px solid #cddaf0;background:#F4F8FF}'
+    +'.bw-th img{width:100%;height:100%;object-fit:cover;display:block}'
+    +'.bw-thx{position:absolute;top:2px;right:2px;background:#123A9E;color:#fff;border:0;border-radius:99px;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer;padding:0}'
+    +'.bw-needcard{border-color:#F0DCA0!important}'
+    +'.bw-needh{font-weight:800;color:#8A6D1F;font-size:14.5px;margin-bottom:6px}'
+    +'.bw-needb{font-size:13px;color:#5C4A18;margin-bottom:9px}'
     +'.bw-mut{font-size:11px;color:#8CA3CC;margin-top:7px}';
     document.head.appendChild(s);
   }
@@ -47,18 +84,12 @@
      +'<div id="bw_facts"></div>'
      +'<div class="bw-lab">what\'s it about</div>'
      +'<textarea id="bw_topic" class="bw-in" placeholder="topic or paste facts... e.g. rank 13 on wallchain, 7.53 quacks yesterday, quacks convert at TGE"></textarea>'
+     +'<button id="bw_shotbtn" class="bw-btn2" type="button">+ attach screenshot(s) of content to rewrite</button>'
+     +'<input id="bw_shotfile" type="file" accept="image/*" multiple style="display:none">'
+     +'<div id="bw_thumbs" class="bw-thumbs"></div>'
      +'<div class="bw-row">'
-     +'<div><div class="bw-lab">type</div><select id="bw_type" class="bw-sel">'
-     +'<option value="deepdive">deep-dive → threadcover</option>'
-     +'<option value="alpha">alpha → bignum</option>'
-     +'<option value="update">update → bignum</option>'
-     +'<option value="airdrop">airdrop → stack</option>'
-     +'<option value="educational">educational → stack</option>'
-     +'<option value="banger">banger → quote</option>'
-     +'<option value="viral">viral → quote</option>'
-     +'<option value="article">article → threadcover</option>'
-     +'</select></div>'
-     +'<div style="max-width:96px"><div class="bw-lab">versions</div><select id="bw_n" class="bw-sel"><option>2</option><option>1</option><option>3</option></select></div>'
+     +'<div><div class="bw-lab">type</div>'+ddHTML('bw_type_dd',TYPE_OPTS,'deepdive')+'</div>'
+     +'<div style="max-width:104px"><div class="bw-lab">versions</div>'+ddHTML('bw_n_dd',N_OPTS,'2')+'</div>'
      +'</div>'
      +'<button id="bw_go" class="bw-btn">write + design it (fires api · cents)</button>'
      +'<div class="bw-mut">runs the critique loop, then fills your real template. the api only fires on this button.</div>'
@@ -79,16 +110,34 @@
   }
 
   async function compose(){
-    const topic=$('bw_topic').value, type=$('bw_type').value, n=+$('bw_n').value;
-    if(!topic.trim()){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">type what it\'s about first.</div></div>'; return; }
-    $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">writing '+n+' version(s) through the loop, then designing…</div></div>';
+    const topic=$('bw_topic').value.trim();
+    const tb=document.querySelector('#bw_type_dd .bw-ddbtn'), nb=document.querySelector('#bw_n_dd .bw-ddbtn');
+    const type=tb?tb.getAttribute('data-v'):'deepdive', n=+((nb&&nb.getAttribute('data-v'))||2);
+    if(!topic && !shots.length){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">type what it\'s about, or attach a screenshot of the content.</div></div>'; return; }
+    const um=topic.match(/https?:\/\/[^\s]+/);
+    if(um && !window.__bwHasBrief){
+      $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">found a link in your topic &mdash; pulling its facts first (free)&hellip;</div></div>';
+      try{
+        var u=new URL(um[0]);
+        var seg=u.pathname.split('/').filter(Boolean)[0]||'';
+        var pj=$('bw_proj').value.trim()||seg||u.hostname.replace('www.','').split('.')[0];
+        var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0]})});
+        await rr.json(); window.__bwHasBrief=true;
+      }catch(e){}
+    }
+    $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">'+(shots.length?'reading your screenshot(s), then rewriting through the loop…':'writing '+n+' version(s) through the loop, then designing…')+'</div></div>';
     try{
-      const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief})});
+      const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief,images:shots})});
       const res=await r.json(); renderVersions(res);
     }catch(e){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">write failed. try again.</div></div>'; }
   }
 
   function renderVersions(res){
+    if(res.error==='need_facts'){ $('bw_out').innerHTML='<div class="bw-card bw-needcard">'
+      +'<div class="bw-needh">the writer won\'t make things up</div>'
+      +'<div class="bw-needb">it needs real facts on this first — so it never hallucinates:</div>'
+      +'<div class="bw-post" style="background:#FFF9EC;border-color:#F0E0B8;color:#5C4A18">'+E(res.message||'')+'</div>'
+      +'<div class="bw-mut">&#8594; put the project\'s real link up top and hit <b>pull facts</b>, or paste specifics into the box, then write again.</div></div>'; return; }
     if(res.error){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">'+E(res.error)+'<br><br>'+E(res.message||'')+'</div></div>'; return; }
     const vs=res.versions||[]; if(!vs.length){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">no versions came back.</div></div>'; return; }
     window.__bwStore={};
@@ -132,11 +181,23 @@
     const body=ws.querySelector('.wbody'); if(!body||body.dataset.bw)return;
     styles(); body.dataset.bw='1'; body.innerHTML=panelHTML();
     $('bw_gather').onclick=gather; $('bw_go').onclick=compose;
+    $('bw_shotbtn').onclick=function(){$('bw_shotfile').click();};
+    $('bw_shotfile').onchange=function(e){addShots(e.target.files); e.target.value='';};
+    drawThumbs();
   }
   if(typeof window.goWriter==='function'){
     const orig=window.goWriter;
     window.goWriter=function(){ orig(); setTimeout(mountIntoWriter,30); };
   }
+  document.addEventListener('click',function(e){
+    var tx=e.target.closest?e.target.closest('.bw-thx'):null;
+    if(tx){ shots.splice(+tx.getAttribute('data-i'),1); drawThumbs(); e.stopPropagation(); return; }
+    var opt=e.target.closest?e.target.closest('.bw-ddo'):null;
+    if(opt){ var dd=opt.closest('.bw-dd'), b=dd.querySelector('.bw-ddbtn'); b.innerHTML=E(opt.textContent.trim())+'<span class="bw-ddcar">&#9662;</span>'; b.setAttribute('data-v',opt.getAttribute('data-v')); dd.querySelectorAll('.bw-ddo').forEach(function(x){x.classList.remove('sel');}); opt.classList.add('sel'); dd.classList.remove('open'); e.stopPropagation(); return; }
+    var btn=e.target.closest?e.target.closest('.bw-ddbtn'):null;
+    if(btn){ var d2=btn.closest('.bw-dd'), was=d2.classList.contains('open'); document.querySelectorAll('.bw-dd.open').forEach(function(x){x.classList.remove('open');}); if(!was)d2.classList.add('open'); e.stopPropagation(); return; }
+    document.querySelectorAll('.bw-dd.open').forEach(function(x){x.classList.remove('open');});
+  });
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ if($('wscr')&&$('wscr').classList.contains('on'))mountIntoWriter(); },200); });
 })();
 </script>
