@@ -143,18 +143,21 @@
     if(res.error){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">'+E(res.error)+'<br><br>'+E(res.message||'')+'</div></div>'; return; }
     const vs=res.versions||[]; if(!vs.length){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">no versions came back.</div></div>'; return; }
     window.__bwStore={};
-    let out='<div class="bw-card"><div class="bw-ok">✓ '+vs.length+' version(s) · '+E(res.type_label||'')+' · run $'+E(res.run_cost_usd)+' · month $'+E(res.month_spent_usd)+'</div></div>';
+    let out='<div class="bw-card"><div class="bw-ok">✓ '+vs.length+' version(s) · '+E(res.type_label||'')+' · run $'+E(res.run_cost_usd)+' · month $'+E(res.month_spent_usd)+'</div>'
+      +(res.source?'<div class="bw-mut" style="margin-top:6px"><b>receipts it read:</b> '+E(res.source)+'</div>':'')+'</div>';
     vs.forEach(function(v,i){
       const id='v'+i; window.__bwStore[id]=v;
-      const slop=v.slop||[], inv=v.invented||[];
+      const slop=v.slop||[], inv=v.invented||[], fab=v.fab||[];
       const slopTag=slop.length?'<span class="bw-tag bw-slopbad">&#9888; slop: '+E(slop.join(', '))+'</span>':'<span class="bw-tag bw-slopok">&#10003; clean</span>';
-      const invTag=inv.length?'<span class="bw-tag bw-slopbad">&#9888; numbers not in your input: '+E(inv.slice(0,4).join(', '))+' &mdash; verify or rewrite</span>':'';
+      const invTag=inv.length?'<span class="bw-tag bw-slopbad">&#9888; numbers not in the source: '+E(inv.slice(0,4).join(', '))+'</span>':'';
+      const fabTag=fab.length?'<span class="bw-tag bw-slopbad">&#9888; fabricated experience: "'+E(fab.join('", "'))+'" — he never lived this</span>':'';
+      const fixedTag=v.fixed?'<span class="bw-tag" style="background:#E4F7EC;color:#1B7A46">&#10003; '+E(v.fixnote||'self-corrected')+'</span>':'';
       const fix=v.critique?'<div class="bw-fix"><b>loop fixed:</b> '+E(v.critique)+'</div>':'';
       out+='<div class="bw-card">'
         +'<div class="bw-lens">'+E(v.lens||('version '+(i+1)))+'</div>'
         +'<div class="bw-post">'+E(v.draft||'')+'</div>'
         +fix
-        +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'&mdash;')+'</span>'+slopTag+invTag
+        +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'&mdash;')+'</span>'+fixedTag+slopTag+invTag+fabTag
         +'<button class="bw-copy" data-id="'+id+'">copy</button>'
         +'<button class="bw-fill" onclick="__bwFill(\''+id+'\')">fill the '+E(v.template||'template')+' &#8594;</button></div>'
         +'</div>';
