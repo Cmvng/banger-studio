@@ -53,6 +53,20 @@ def fetch(url, binary=False, timeout=10):
 def _clean(t):
     return re.sub(r'<[^>]+>', '', t or '').strip()
 
+def _readable(t):
+    """Keep text human-readable: strip control chars, collapse whitespace, drop if mostly non-latin."""
+    if not t: return ''
+    t = t.replace('\n', ' ').replace('\r', ' ')
+    t = re.sub(r'[\x00-\x1f\x7f]', '', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+    # if less than 40% ascii letters/spaces, it's another script — skip for an english writer
+    if t:
+        latin = sum(1 for c in t if c.isascii())
+        if latin / max(len(t),1) < 0.5:
+            return ''
+    return t
+
+
 def gather(project, root_url, assets_dir):
     """Return the full dossier for one project."""
     os.makedirs(assets_dir, exist_ok=True)
@@ -123,10 +137,18 @@ def gather(project, root_url, assets_dir):
     # 3 — the project's own X posts (public syndication, no login)
     syn = fetch('https://syndication.twitter.com/srv/timeline-profile/screen-name/%s' % slug)
     if syn:
-        for t in re.findall(r'"full_text":"(.*?)"', syn)[:6]:
-            try: t = t.encode().decode('unicode_escape', errors='ignore')
-            except Exception: pass
-            t = re.sub(r'https://t\.co/\w+', '', t).strip()
+        texts = []
+        try:
+            # syndication returns JSON; parse it so unicode decodes correctly
+            for m in re.finditer(r'"full_text":"((?:[^"\\]|\\.)*)"', syn):
+                raw = '"' + m.group(1) + '"'
+                try: texts.append(json.loads(raw))
+                except Exception: pass
+        except Exception:
+            pass
+        for t in texts[:6]:
+            t = re.sub(r'https?://\S+', '', t).strip()
+            t = _readable(t)
             if len(t) > 12: D['x_pulse'].append(('@' + slug, t[:200]))
 
     # 4 — wider X chatter via public mirrors (proxy helps a lot here)
@@ -134,7 +156,7 @@ def gather(project, root_url, assets_dir):
         h = fetch('https://%s/search?q=%s&f=tweets' % (m, slug), timeout=6)
         if h and 'tweet-content' in h:
             for tm in re.findall(r'tweet-content[^>]*>(.*?)</div>', h, re.S)[:6]:
-                txt = _clean(tm)
+                txt = _readable(_clean(tm))
                 if len(txt) > 15: D['x_pulse'].append(('mirror', txt[:200]))
             break
 
@@ -432,8 +454,19 @@ class H(BaseHTTPRequestHandler):
         if p in ('/', '/index.html'):
             return self._send(200, PAGE.format(body=FORM.format(proj='MegaETH', root='https://www.megaeth.com', out='')))
         if p == '/app':
-            try: return self._send(200, open(os.path.join(ROOT, 'banger-studio-app.html'), 'rb').read())
-            except Exception: return self._send(404, 'app not found')
+            try:
+                doc = open(os.path.join(ROOT, 'banger-studio-app.html'), 'rb').read().decode('utf-8', 'ignore')
+                fuse = ''
+                fp = os.path.join(ROOT, 'fuse.html')
+                if os.path.exists(fp):
+                    fuse = open(fp, 'r', encoding='utf-8').read()
+                if '</body>' in doc:
+                    doc = doc.replace('</body>', fuse + '</body>', 1)
+                else:
+                    doc = doc + fuse
+                return self._send(200, doc)
+            except Exception as e:
+                return self._send(404, 'app not found: ' + str(e))
         if p.startswith('/assets/'):
             fp = os.path.join(ASSETS, os.path.basename(p))
             if os.path.exists(fp):
@@ -452,14 +485,14 @@ class H(BaseHTTPRequestHandler):
             D = gather(data.get('proj', 'MegaETH'), data.get('root', ''), ASSETS)
             brief = build_brief(D)
             json.dump(brief, open(BRIEF_FILE, 'w'))
-            return self._send(200, render_dossier(brief))
+            return self._send(200, json.dumps({'brief': brief}), 'application/json')
         if self.path == '/write':
             try: brief = json.load(open(BRIEF_FILE))
             except Exception: return self._send(200, '<div class="card"><div class="warn">gather first.</div></div>')
             res = write(brief, data.get('angle', ''),
                                want={'threads': int(data.get('th', 2)), 'posts': int(data.get('po', 4)), 'qts': int(data.get('qt', 4))},
                                voice=voice())
-            return self._send(200, render_drafts(res))
+            return self._send(200, json.dumps(res), 'application/json')
         return self._send(404, 'no route')
 
     def log_message(self, *a): pass
@@ -468,4 +501,3 @@ class H(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8080'))
     ThreadingHTTPServer(('0.0.0.0', port), H).serve_forever()
-
