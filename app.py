@@ -105,6 +105,7 @@ def gather(project, root_url, assets_dir):
 
     # 2 — live numbers (free public APIs; slug guessed from project)
     slug = project.lower().replace(' ', '')
+    got_token = False
     cg = fetch('https://api.coingecko.com/api/v3/coins/%s?localization=false&tickers=false&community_data=false&developer_data=false' % slug)
     if cg:
         try:
@@ -113,17 +114,22 @@ def gather(project, root_url, assets_dir):
                 x = md
                 for k in path: x = (x or {}).get(k, {})
                 return x if x not in ({}, None) else d
-            D['facts'] += [
-                ('price usd', '$%s' % g(['current_price', 'usd'])),
-                ('market cap', '$%s' % f"{int(g(['market_cap', 'usd'], 0)):,}"),
-                ('24h change', '%.2f%%' % (md.get('price_change_percentage_24h') or 0)),
-                ('all-time high', '$%s' % g(['ath', 'usd'])),
-                ('down from ath', '%.1f%%' % (g(['ath_change_percentage', 'usd'], 0))),
-            ]
-            img = j.get('image', {}).get('large')
-            if img: D['images'].append(('token logo', img))
+            price = g(['current_price', 'usd'], 0)
+            if price:
+                got_token = True
+                D['facts'] += [
+                    ('price usd', '$%s' % price),
+                    ('market cap', '$%s' % f"{int(g(['market_cap', 'usd'], 0)):,}"),
+                    ('24h change', '%.2f%%' % (md.get('price_change_percentage_24h') or 0)),
+                    ('all-time high', '$%s' % g(['ath', 'usd'])),
+                    ('down from ath', '%.1f%%' % (g(['ath_change_percentage', 'usd'], 0))),
+                ]
+                img = j.get('image', {}).get('large')
+                if img: D['images'].append(('token logo', img))
         except Exception:
             pass
+    if not got_token:
+        D['facts'].append(('token price', 'no token found (probably none exists)'))
     ll = fetch('https://api.llama.fi/v2/chains')
     if ll:
         try:
@@ -601,7 +607,10 @@ HARD_FACT_RULE = ("HARD FACT RULE (overrides everything, including the rubric an
  "story, trade, loss, rank, timeframe, or price to satisfy a lens or to make the post 'self-implicating' - a rubric point "
  "met with an invented fact is a FAIL, not a pass. If a lens calls for a personal anecdote and none was provided, change "
  "the angle to an honest observation of what IS given. If the facts are too thin to write anything true, return the "
- "need-facts JSON instead of inventing.")
+ "need-facts JSON instead of inventing. BUT 'too thin' means ZERO concrete facts. If the topic gives even ONE real "
+ "number or named event (e.g. 'raising $1b at 20b valuation'), that IS enough - write tightly on exactly that and "
+ "nothing more. Demanding extra facts when one usable fact was given is also a FAIL: a sharp take on one true number "
+ "is the whole job.")
 
 def _call_api(sys_prompt, content):
     """one Haiku call -> (clean_text, real_cost). raises on transport errors."""
@@ -659,8 +668,9 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
         '{"source":"<one line: the concrete facts/numbers you are using, verbatim from the screenshots/topic - your receipts>",'
         '"versions":[{"lens":"<lens name>","draft":"<the FINAL revised post>","critique":"<1 line: what the loop fixed>",'
         '"template":"%s","slots":{<exactly the slot keys above, as key:value>},"image":""}]}. '
-        'If you do NOT have enough real facts to write without inventing anything, return exactly '
-        '{"versions":[],"need":"<one short line naming the specific facts you need>"} and no other text.'
+        'If and ONLY if the topic+brief+screenshots contain ZERO concrete facts (no real number, no named event), return exactly '
+        '{"versions":[],"need":"<one short line naming the specific facts you need>"} and no other text. '
+        'If at least one concrete fact was given, you MUST write using only it.'
         % (n, fmt, lens_txt, tpl, schema, tpl))
     if images:
         sys_prompt += ("\n\nSCREENSHOTS ATTACHED: they are SOMEONE ELSE'S post/content. You are writing HIS reaction or remix - "
@@ -686,13 +696,23 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     except Exception as e:
         return {'error': 'api_fail', 'message': str(e)[:300]}
     spent = _spend_add(real)
+    parsed = None
     try:
-        parsed = json.loads(text); versions = parsed.get('versions', [])
+        parsed = json.loads(text)
     except Exception:
+        a, b = text.find('{'), text.rfind('}')
+        if a >= 0 and b > a:
+            try: parsed = json.loads(text[a:b + 1])
+            except Exception: parsed = None
+    if parsed is None:
+        mneed = _slopre.search(r'"need"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if mneed:
+            return {'error': 'need_facts', 'message': mneed.group(1)}
         low = text.lower()
         if any(k in low for k in ('need', 'not enough', 'give me', 'what is', 'provide', 'more detail', "don't have", 'no facts', 'facts about', 'more context')):
             return {'error': 'need_facts', 'message': text[:500]}
         return {'error': 'parse', 'message': text[:400]}
+    versions = parsed.get('versions', [])
     if not versions:
         need = parsed.get('need') or parsed.get('message') or ''
         return {'error': 'need_facts', 'message': need or 'the writer needs real facts on this first.'}
