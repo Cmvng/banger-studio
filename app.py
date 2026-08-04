@@ -219,10 +219,173 @@ TEMPLATES = ("news, minimal, bars, tiles, feecompare, versus, bignum, quote, gmc
              "iceberg, timeline, stack, sticker, squad, orbit10 (dark top-10 orbit), "
              "leadboard, mindshare, ifbought, threadcover")
 
-DEFAULT_VOICE = """casual lowercase. mixed casing sometimes. protect $TICKERS and coin names.
-trailing '...' or '.....' to trail off. short stacked lines with blank lines between.
-dashes for lists, never numbered 1/n. end on a question sometimes. ~10% light emoji.
-never use em-dashes. honest takes, both sides when bearish. naija/CT native but clear."""
+REAL_VOICE = r"""
+# CMVNG — REAL VOICE (recovered from his archive analysis, chat 0e5af358)
+
+## THE NON-NEGOTIABLES (from measured analysis of 1,348 originals)
+1. **Openers VARY WILDLY.** Only 15 of 1,348 tweets (~1%) start with "Yoo". NEVER default to it.
+   Real openers: straight into the point · "be [Project]" · "Is it only me..." ·
+   "there are some interesting markets..." · "this should inspire you..." ·
+   "okay regardless..." · "nothing changes...." · "current ranks on..." ·
+   "Ran into an old friend..." · most often JUST DIVES INTO THE POINT.
+2. **He shares HIS OWN stake FIRST, then opens it up.** Real skin in game:
+   "earned 7.53 quacks on wallchain yesterday" · "rank 13 on wallchain leaderboard Epoch II" ·
+   "My thesis is we get a pump..." · "I took a very bad loss yesterday on Telsa, lost 250+ usdc"
+3. **Ends on a question they MUST answer** (NON-NEGOTIABLE for bangers):
+   "how many Quacks did you get?" · "Do you think it will trade above 800m fdv on TGE? or below...." ·
+   "what are your thoughts on the $Elsa tokenomics?" · "What's your pick and why?"
+   A flat statement with nothing to reply to is a DEAD tweet.
+4. **Honest parenthetical asides — the human tell:** "(sadly didn't expect this decline)" · "(loud and proud)"
+5. **Trailing dots "....." constantly** — mid-thought AND at the end. His signature.
+6. **Lowercase casual starts.** Writes fast on phone. Minor typos FINE ("Micheal","recieve") — DON'T over-polish.
+7. **Real project names + real numbers ALWAYS.** ($LMTS, wallchain, quacks, fdv, 98m, 643%)
+8. **Emojis sparing:** 👀 🔥 💪 ✅️ 👇 — usually one or none.
+
+## NEVER WRITE (the slop tells)
+- Bloomberg/macro finance language
+- "crypto is the future" / "privacy isn't a feature, it's the whole point" generics
+- "which side are you on?" hollow engagement-bait
+- hashtag spam · "hot take:" openers · perfect grammar · forced CT slang
+- ANY flat hook with no personal stake and no real number
+
+## REAL TWEETS — the exemplar bank (absorb the rhythm)
+
+[UPDATE THREAD w/ data + thesis + honest aside]
+yoooo... seems @trylimitless is trending with over 643% increase in revenue in q4
+about 7 days left for Epoch II but price is down to 98m fdv
+(sadly didn't expect this decline)
+Over 1.6m $LMTS unstaked in the last 5days
+My thesis is we get a pump when season 2 drops...
+
+[PROJECT DEEP-DIVE — "be [Project]" bullet facts]
+be Genome
+- peak during info-fi and capture heavy attention
+- launch 888 genesis NFTs at 0.3 ETH
+- raise $840k+ from mint
+- promise $Nome allocation at TGE
+- TGE slated Q2 2025... then Q3... then Q4
+website now offline.....
+
+[PROJECT DEEP-DIVE 2]
+Be XOOB Network
+- Founded in 2023
+- Built as an on-chain growth system for Web3 projects
+- CEO and co-founder goes by Sergii Novozhylov
+- Incubated by Chromia
+- Raised $1.6M seed round in August 2024
+
+[SHORT w/ own stake + question close]
+okay regardless...
+earned 7.53 quacks on wallchain yesterday
+how many Quacks did you get?
+
+[REFLECTION / life-philosophy w/ trailing dots]
+this should inspire you to be a profit maxi in 2026.....
+please whatever you do.. don't fall in love with any project, it always ends in tears.... 99% of the time
+
+[MARKET INTEL — lists real markets, question close]
+there are some very interesting markets on the Pre-TGE section of @trylimitless
+- idos to launch a token by March 31st or February 28th
+- reya to launch token by February 28th
+- HeyElsa to launch token February 28th
+
+[PREMARKET CHART TAKE w/ question]
+this is how the Zama premarket chart looks like... down to 690M fdv....
+Do you think it will trade above 800m fdv on TGE? or below....
+
+[HOW-TO / airdrop steps]
+Are you ready for the @wardenprotocol airdrop?
+$WARD airdrop registration opens Monday, January 19, 2026.
+How to register:
+>>> Open the Warden App
+>>> Tap the wallet icon (top right)
+>>> Go to Settings
+>>> Bind your wallet, X, Discord...
+
+[PERSONAL NARRATIVE — real life bleeds into web3, real stats]
+one thing I really took seriously over the last 1 year and a half was hitting the gym 4-5 times weekly and lifting heavy.....
+going to the gym with my brother pushed me to the limits and I saw a competition....
+his PR (bench press) = 340kg 1 Rep
+my PR (bench press) = 250kg 1 Rep
+
+[GENUINE OBSERVATION — "Is it only me..."]
+Is it only me or do I get tired of reading long form contents and articles on X... I thought original idea for X was short form... Now I see articles everywhere like I am reading a newspaper....
+
+[USE-CASE STORY — product woven into real moment]
+He needed help with a quick task, so instead of cash or bank transfer, I sent him $50 USDC on Base using @HeyElsaAI. I just told Elsa what I wanted to do in my natural language. Everything happened in seconds.
+
+## HIS AMBASSADOR UNIVERSE (from his real links, not assumptions)
+$LMTS/@trylimitless · @wallchain_xyz (quacks) · $Elsa/@HeyElsaAI · @wardenprotocol ($WARD) ·
+$XNL/@novastro_xyz · $CXT/@Covalent_HQ · $NOVAS · $NEWT · Beldex/@BeldexCoin
+
+"""
+
+STRUCTURE = r"""
+# STRUCTURE LAYER — proven mechanics under his voice
+# From X's open-sourced algorithm (Jan 2026) + top-creator teardowns.
+# These are ENGINEERING TARGETS the writer optimizes for — WITHOUT breaking his voice.
+# His voice already does most of this naturally; this makes it deliberate.
+
+## THE REAL ALGORITHM WEIGHTS (public, from xai-org/x-algorithm)
+#   Retweet ×20 · Reply ×13.5 · Profile-click ×12 · Link-click ×11 · Bookmark ×10 · Like ×1
+#   NEGATIVE: block -3.0, mute, report → content that ANNOYS is punished hard.
+#   Time-decay: post loses half its visibility every ~6h → early engagement is everything.
+#   External links = SUPPRESSED. Grok reads text by MEANING (specificity beats keywords).
+
+## WHAT THIS MEANS FOR EVERY DRAFT (priority order)
+1. REPLY IS THE #1 LEVER (13.5×). Every banger must give people something to reply TO.
+   - a real question they have an opinion on ("above or below 800m fdv on TGE?")
+   - a stake-claim they'll agree/disagree with ("my thesis is we pump when s2 drops")
+   - NOT hollow bait ("which side are you on?") → that gets blocks (-3.0). Real > provocative.
+2. BOOKMARK BAIT FOR DEEP-DIVES (10×). "be [Project]" bullet breakdowns = reference people SAVE.
+   - dense facts, real numbers, the full picture in one place → "save this one" energy.
+3. HOOK = FIRST LINE DECIDES EVERYTHING. Must work standalone (it's all most people see).
+   - specific number > vague · open loop > statement · his real openers, never "Yoo"
+   - GOOD: "643% revenue increase but price down to 98m fdv..." (number + tension)
+   - DEAD: "some thoughts on Beldex..." / "privacy is important..." (vague = ignored)
+4. DEPTH = RETENTION SIGNAL. 2-min reads win. Threads: each line survives alone, transitions pull down.
+5. NO RAW LINKS IN THE POST. If a campaign needs a link, it goes in a REPLY. (Link in post = suppressed.)
+6. PROFILE-CLICK BAIT (12×): a take so specific/credible people click to see who said it.
+   - his real skin-in-game does this: "rank 13 on wallchain leaderboard epoch II"
+
+## THREAD ARCHITECTURE (magazine model — for deep-dives)
+- HOOK (standalone, number or open loop) → LEDE (1 line sets the story) →
+  BEATS (one idea per line, dash facts, real numbers, vary texture) →
+  CLOSE (his question — the reply engine)
+- keep each line < ~240 chars, blank lines, mobile-first, no wall of same-length lines
+
+## THE ANTI-SLOP GUARDRAIL (algorithm-backed)
+The algorithm PUNISHES annoyance (-3.0 block). So the rule isn't "be edgy," it's "be real."
+Every draft must pass: does this give a REAL reason to reply, or is it hollow engagement-bait?
+If it reads like every other AI crypto post → it gets muted, not amplified. Specificity is the moat.
+
+## 7 FORMATS THAT PERFORM (matched to his real range)
+- deep-dive "be [Project]"  → BOOKMARKS (his signature, algo-gold)
+- update + thesis + honest aside → REPLIES (his "trylimitless trending" style)
+- market-intel list ("interesting markets on...") → BOOKMARKS + REPLIES
+- premarket/chart take + question → REPLIES ("above or below on TGE?")
+- how-to / airdrop steps → BOOKMARKS (reference)
+- personal narrative w/ real stats → PROFILE CLICKS (the gym story)
+- genuine observation "is it only me..." → REPLIES (relatable = discussion)
+
+"""
+
+DEFAULT_VOICE = REAL_VOICE + "\n\n=== STRUCTURE (what the X algorithm rewards) ===\n" + STRUCTURE
+
+def _score(text):
+    """Real X-algorithm-weighted quality gate. Rewards reply(13.5x)/bookmark(10x) levers, punishes slop."""
+    import re as _re
+    t = text.lower(); s = 0.0
+    if '?' in text: s += 13.5
+    if _re.search(r"\b(my thesis|i think|rank \d|i took|earned|feels? mispriced|my pick|my bag)\b", t): s += 6
+    s += min(len(_re.findall(r"^\s*[-\u2022>]", text, _re.M)), 5) * 2
+    s += min(len(_re.findall(r"[\$%]|\d+[mkb]?\b|\d{2,}", text)), 6) * 2
+    first = text.strip().split(chr(10))[0].lower()
+    if any(v in first for v in ["some thoughts", "is important", "feature, it", "which side"]): s -= 10
+    elif _re.search(r"\d|be [a-z]", first): s += 8
+    s -= sum(1 for p in ["which side are you on", "isn't a feature", "the whole point", "game changer", "to the moon", "wagmi"] if p in t) * 10
+    return s
+
 
 
 def _spend_ok(est):
@@ -310,6 +473,171 @@ def write(brief, angle, want=None, voice=None):
 
 
 
+# ==================== THE STYLE LIBRARY (studied from ~2,500 real tweets) ====================
+# For each content TYPE, several studied creator LENSES. The writer renders the same topic
+# through different lenses -> diverse, non-slop versions. Moves are techniques in HIS voice.
+STYLE_LENSES = {
+ "article": [
+   ("Hayes essay", "open WIDE with history or a story (not the token), name ONE bold thesis early, BUILD the argument with a concrete model instead of asserting it, irreverent jabs for texture, end earned"),
+   ("Ignas research", "under-the-radar angle, open on a striking researched stat, admit what you didn't know then teach it, lived-in and specific"),
+   ("Ryan values", "state the moral stakes plainly, then a time-anchored narrative of what happened and why it actually matters"),
+ ],
+ "alpha": [
+   ("GCR calm", "state the unpopular call quietly, no caps, reflexivity angle (the belief moves the price), skin behind it, say what would invalidate it"),
+   ("Cred chronology", "lay a timeline of the project's own contradicting statements and let it convict them; dry, deflating wit"),
+   ("Pentoshi", "lead with one hard data point, add a hard-earned warning, close on an aphorism"),
+ ],
+ "educational": [
+   ("Miles structure", "a parallel list that TURNS on the last line, OR two numbers side by side that reveal something undeniable"),
+   ("Route2FI practical", "'what if i told you [concrete figure]' hook, then clean practical steps"),
+   ("DeFi Dad utility", "exact hands-on steps to do the thing right now; useful enough that people save it"),
+ ],
+ "banger": [
+   ("Cobie deadpan", "one deadpan line; absurdist deflation of hype; the turn; self-implication even in a win; no bait"),
+   ("loomdart insight", "a smart observation stated plainly, or a one-line analogy joke"),
+   ("beanie awe", "narrate ONE jaw-dropping real fact with genuine wonder"),
+ ],
+ "viral": [
+   ("Ansem personality", "relatable, human, a little off-topic; personality first so the alpha lands later"),
+   ("timing", "the exact reaction the timeline wanted about today's event, said first and flat"),
+   ("beanie fact", "a wild true fact people feel compelled to reshare"),
+ ],
+ "deepdive": [
+   ("ZachXBT source", "be the SOURCE: first-hand findings from actually using it, names + numbers + receipts, the thing nobody else noticed"),
+   ("Ignas angle", "the under-radar angle + an anecdote-as-lesson + a striking stat"),
+   ("Route2FI clear", "what it does and how you actually use it, structured and clear for an outsider"),
+ ],
+ "airdrop": [
+   ("Miles opportunity", "'missed X? people made $Y. watch these next: [list]. here's how.' concrete and actionable"),
+   ("DeFi Dad steps", "exact steps to do it now, the risk/trap named first"),
+   ("Route2FI honest", "name the trap first, then the clean steps, honest on the odds ('might be nothing')"),
+ ],
+ "update": [
+   ("Pentoshi honest", "lead with the real figure, label your own state honestly, one human line"),
+   ("Ignas callout", "if the number exposes something, say it straight"),
+ ],
+}
+TYPE_LABEL = {"article":"Article / long-form","alpha":"Alpha / trading call","educational":"Educational thread",
+ "banger":"Banger / one-liner","viral":"Viral / culture","deepdive":"Project deep-dive",
+ "airdrop":"Airdrop / how-to","update":"Update / milestone"}
+
+# the anti-slop foundation, proven on the corpus — shared across every styled write
+FOUNDATION = ("PROVEN ON 2,500 REAL TWEETS: there is NO format formula. what separates great from average is "
+ "SHAREABILITY - content worth reposting. every good post is FOR one of six triggers: "
+ "1 universal truth, 2 humor/relatability, 3 original revelation, 4 righteous truth sharply framed, "
+ "5 genuine utility, 6 vivid spectacle. NEVER lean on the average-creator crutch (bullet-stuffing, "
+ "ticker spam, colon-setups, rhetorical questions, forced 'everyone thinks X but actually'). those measurably do nothing.")
+
+import re as _slopre
+# HONEST slop detector — substance-level tells (the thin keyword list gave false 'clean').
+SLOP_TELLS = {
+ "bait-opener": [r"^\s*nobody('s| is| are)? (talk|say)", r"^\s*most people", r"^\s*everyone (thinks|says|is)",
+   r"unpopular opinion", r"hot take", r"let that sink in", r"^\s*here('s| is) why\b", r"you('re| are) (doing|farming|using) .* wrong"],
+ "cliche-hook": [r"the one (number|thing|metric|chart) that", r"what nobody tells you", r"the truth about",
+   r"\bis broken\b", r"nobody('s| is) talking about", r"the real reason", r"changed everything"],
+ "let-me-show": [r"here('s| is) what i found", r"let me show you", r"here('s| is) my (exact )?setup",
+   r"buckle up", r"a lot to unpack", r"thread (below|incoming)", r"strap in", r"let('s| us) dive"],
+ "platitude": [r"stay consistent", r"trust the process", r"\bwagmi\b", r"we('re| are) (so )?early",
+   r"boring,? consistent", r"show up every ?day", r"put in the work", r"keep building", r"never the ones complaining"],
+ "bait-question": [r"am i the only one", r"who('s| is) with me", r"\bagree\?\s*$", r"right\?\s*$",
+   r"isn'?t it\?*\s*$", r"or is it just me"],
+ "cliche-phrase": [r"the whole thing", r"quietly build", r"sleeping on this", r"a graveyard",
+   r"game.?chang", r"to the moon", r"which side are you on", r"the network is the", r"seamless", r"revolutionary"],
+}
+def _slopcheck(text):
+    t=(text or "").lower(); hits=[]
+    for cat,pats in SLOP_TELLS.items():
+        for p in pats:
+            if _slopre.search(p,t,_slopre.M): hits.append(cat); break
+    return hits
+
+# content-type -> the ONE real template it fills, and that template's slot schema
+CTYPE_TEMPLATE = {"deepdive":"threadcover","article":"threadcover","alpha":"bignum",
+ "educational":"stack","airdrop":"stack","banger":"quote","viral":"quote","update":"bignum"}
+SLOT_SCHEMA = {
+ "threadcover":"eyebrow (2-4 word label, e.g. 'beldex . research'); l1,l2,l3 (three SHORT punchy headline fragments ~2-3 words each, they stack into one headline); subline (one short line under the thread pill)",
+ "quote":"q (the standalone line, <=140 chars, no hashtags); who (attribution, usually 'cmvng')",
+ "bignum":"lab (short label); n (the ONE big number/stat, e.g. '#13','2000+','+643%'); subline (one short line); note (one honest human line)",
+ "stack":"t (title); a (one accent word); layers (2-4 steps as a comma-separated list, each a few words); note (one honest line, e.g. 'could be nothing')",
+}
+CRITIQUE_RUBRIC = ("MANDATORY LOOP: for each version, silently write a first draft, critique it honestly, and REVISE until it passes ALL: "
+ "(1) a real opinion/stake, not 'this is good, go do it'  (2) self-implicating: his real number/rank/loss, not vague  "
+ "(3) specific real figures, not abstraction  (4) understated: no hype words, no emoji-as-argument  "
+ "(5) ZERO AI tells or cliches ('sleeping on it','nobody's talking about','let me show you','the truth about','game-changer','heating up')  "
+ "(6) ends on a real thought or an answerable question, never vague bait  (7) he'd actually post it, not scroll past muttering 'AI slop'. "
+ "Output ONLY the revised final + a 1-line note of what you fixed.")
+
+def write_styled(topic, ctype, n=3, brief=None, voice=None):
+    """One topic -> several studied LENSES, each run through the critique loop, each with its real-template slots filled. One API call."""
+    if not API_KEY:
+        return {'error': 'no_api_key', 'message': 'Set ANTHROPIC_API_KEY in Railway variables.'}
+    ctype = (ctype or "banger").lower()
+    lenses = STYLE_LENSES.get(ctype) or STYLE_LENSES["banger"]
+    n = max(1, min(int(n or 3), len(lenses)))
+    lenses = lenses[:n]
+    voice = voice or DEFAULT_VOICE
+
+    est = (900 * PRICE['in'] + MAX_TOK * PRICE['out']) / 1_000_000
+    ok, sofar = _spend_ok(est)
+    if not ok:
+        return {'error': 'cap_reached', 'message': 'Monthly cap $%.2f reached (spent $%.2f).' % (SPEND_CAP, sofar)}
+
+    lens_txt = "\n".join("- %s: %s" % (nm, mv) for nm, mv in lenses)
+    is_long = ctype in ("article", "deepdive", "educational", "airdrop")
+    fmt = ("multi-tweet thread, line breaks between tweets" if ctype in ("deepdive","educational","airdrop")
+           else "long-form article with short paragraphs" if ctype == "article"
+           else "one short standalone post")
+    tpl = CTYPE_TEMPLATE.get(ctype, "quote")
+    schema = SLOT_SCHEMA.get(tpl, "")
+    sys_prompt = (
+        "You are the ghost-writer for a Lagos web3 creator (@cmvng). Write ONLY from what you're given - "
+        "do NOT invent facts, numbers, or projects not in the topic/brief. Match this VOICE exactly:\n" + voice +
+        "\n\n" + FOUNDATION +
+        "\n\n" + CRITIQUE_RUBRIC +
+        "\n\nWrite %d DIFFERENT versions of the SAME topic, each through a different studied LENS below. "
+        "Every version is unmistakably HIS voice - the lens only changes the ANGLE and craft move. "
+        "Each version is a %s.\n\nLENSES:\n%s\n\n"
+        "For EACH version, also fill the graphic. Template: '%s'. Slots: %s. "
+        "Fill every slot FROM the final post - short, punchy, real, same no-slop bar.\n\n"
+        "Return STRICT JSON, no prose, no markdown fences:\n"
+        '{"versions":[{"lens":"<lens name>","draft":"<the FINAL revised post>","critique":"<1 line: what the loop fixed>",'
+        '"template":"%s","slots":{<exactly the slot keys above, as key:value>},"image":""}]}'
+        % (n, fmt, lens_txt, tpl, schema, tpl))
+    user = "CONTENT TYPE: %s\nTOPIC:\n%s" % (TYPE_LABEL.get(ctype, ctype), topic or "(none given)")
+    if brief:
+        user += "\n\nBRIEF (real facts to use, do not invent beyond this):\n" + json.dumps(brief, ensure_ascii=False)[:3500]
+
+    body = json.dumps({'model': MODEL, 'max_tokens': MAX_TOK, 'system': sys_prompt,
+                       'messages': [{'role': 'user', 'content': user}]}).encode()
+    req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={
+        'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01'})
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            j = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return {'error': 'api_http', 'message': '%s: %s' % (e.code, e.read().decode()[:300])}
+    except Exception as e:
+        return {'error': 'api_fail', 'message': str(e)[:300]}
+
+    usage = j.get('usage', {})
+    real = (usage.get('input_tokens', 900) * PRICE['in'] + usage.get('output_tokens', MAX_TOK) * PRICE['out']) / 1_000_000
+    spent = _spend_add(real)
+    text = ''.join(b.get('text', '') for b in j.get('content', []) if b.get('type') == 'text')
+    text = text.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip()
+    try:
+        parsed = json.loads(text); versions = parsed.get('versions', [])
+    except Exception:
+        return {'error': 'parse', 'message': text[:400]}
+    for v in versions:
+        v['slop'] = _slopcheck(v.get('draft', ''))
+        v.setdefault('template', CTYPE_TEMPLATE.get(ctype, 'quote'))
+        v.setdefault('slots', {})
+        v.setdefault('critique', '')
+    return {'type': ctype, 'type_label': TYPE_LABEL.get(ctype, ctype), 'versions': versions,
+            'template': CTYPE_TEMPLATE.get(ctype, 'quote'),
+            'run_cost_usd': round(real, 4), 'month_spent_usd': spent}
+
+
 # ==================== THE SERVER ====================
 """
 THE WORKER PAGE — what you open on your phone.
@@ -335,6 +663,8 @@ def voice():
     return EMBEDDED_VOICE.strip() or None
 
 def esc(s): return html.escape(str(s))
+
+STYLED_BLOCK = '<div class="card">\n  <label>&#9733; styled writer &mdash; diverse versions, zero slop</label>\n  <textarea id="stopic" placeholder="topic or paste facts... e.g. Beldex BChat: private messenger, 2000+ masternodes, 3-hop, no phone number, down 82% from ath"></textarea>\n  <div class="row">\n    <div><label>content type</label>\n      <select id="stype">\n        <option value="deepdive">Project deep-dive</option>\n        <option value="article">Article / long-form</option>\n        <option value="alpha">Alpha / trading</option>\n        <option value="educational">Educational thread</option>\n        <option value="airdrop">Airdrop / how-to</option>\n        <option value="banger">Banger / one-liner</option>\n        <option value="viral">Viral / culture</option>\n        <option value="update">Update / milestone</option>\n      </select></div>\n    <div><label>versions</label><input id="snum" type="number" value="3" min="1" max="3"></div>\n  </div>\n  <button onclick="styled()">WRITE STYLED VERSIONS (fires the api - cents)</button>\n  <div class="spend">writes your topic through several studied creator lenses, in your voice. (if you GATHER a project below first, it also uses those real facts.)</div>\n</div>\n<div id="styled-out"></div>\n<script>\nasync function styled(){\n  var topic=document.getElementById(\'stopic\').value, type=document.getElementById(\'stype\').value, n=+document.getElementById(\'snum\').value;\n  document.getElementById(\'styled-out\').innerHTML=\'<div class="card">writing \'+n+\' versions through different studied lenses...</div>\';\n  var r=await fetch(\'/styled\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({topic:topic,type:type,n:n})});\n  document.getElementById(\'styled-out\').innerHTML=await r.text();\n}\n</script>\n'
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -442,6 +772,24 @@ def render_drafts(res):
     return ''.join(out)
 
 
+def render_styled(res):
+    if 'error' in res:
+        return '<div class="card"><div class="warn">%s<br><br>%s</div></div>' % (esc(res['error']), esc(res.get('message', '')))
+    vs = res.get('versions', [])
+    if not vs:
+        return '<div class="card"><div class="warn">no versions came back.</div></div>'
+    out = ['<div class="card"><div class="ok">&#10003; %d versions of a %s &middot; run $%s &middot; month $%s</div></div>'
+           % (len(vs), esc(res.get('type_label','')), esc(res.get('run_cost_usd','?')), esc(res.get('month_spent_usd','?')))]
+    for v in vs:
+        slop = v.get('slop', [])
+        flag = ('<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; slop: %s</span>' % esc(', '.join(slop))) if slop else '<span class="tag" style="background:#12331F;color:#7CE0A0">&#10003; clean</span>'
+        tag = ('<div class="tagrow"><span class="tag">lens: %s</span><span class="tag">design: %s</span>%s%s</div>'
+               % (esc(v.get('lens','?')), esc(v.get('template','—')),
+                  ('<span class="tag">image: %s</span>' % esc(v['image'])) if v.get('image') else '', flag))
+        out.append('<div class="draft"><b style="color:#9FC0FF">%s</b>\n\n%s%s</div>' % (esc(v.get('lens','')), esc(v.get('draft','')), tag))
+    return ''.join(out)
+
+
 class H(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype='text/html; charset=utf-8'):
         b = body.encode() if isinstance(body, str) else body
@@ -452,7 +800,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = self.path.split('?')[0]
         if p in ('/', '/index.html'):
-            return self._send(200, PAGE.format(body=FORM.format(proj='MegaETH', root='https://www.megaeth.com', out='')))
+            return self._send(200, PAGE.format(body=STYLED_BLOCK + FORM.format(proj='MegaETH', root='https://www.megaeth.com', out='')))
         if p == '/app':
             try:
                 doc = open(os.path.join(ROOT, 'banger-studio-app.html'), 'rb').read().decode('utf-8', 'ignore')
@@ -492,6 +840,19 @@ class H(BaseHTTPRequestHandler):
             res = write(brief, data.get('angle', ''),
                                want={'threads': int(data.get('th', 2)), 'posts': int(data.get('po', 4)), 'qts': int(data.get('qt', 4))},
                                voice=voice())
+            return self._send(200, json.dumps(res), 'application/json')
+        if self.path == '/styled':
+            try: brief = json.load(open(BRIEF_FILE))
+            except Exception: brief = None
+            res = write_styled(data.get('topic', ''), data.get('type', 'banger'),
+                               n=int(data.get('n', 3)), brief=brief, voice=voice())
+            return self._send(200, render_styled(res))
+        if self.path == '/compose':
+            try: brief = json.load(open(BRIEF_FILE))
+            except Exception: brief = None
+            res = write_styled(data.get('topic', ''), data.get('type', 'banger'),
+                               n=int(data.get('n', 3)),
+                               brief=(brief if data.get('usebrief') else None), voice=voice())
             return self._send(200, json.dumps(res), 'application/json')
         return self._send(404, 'no route')
 
