@@ -6,15 +6,52 @@ Serves the studio app at /app and the worker page at /.
 import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-EMBEDDED_VOICE = """casual lowercase mostly. occasional Mixed casing for emphasis. protect $TICKERS, coin names, and @handles exactly.
-trail off with '...' or '.....' — never finish every thought neatly.
-short stacked lines. blank line between beats. let it breathe.
-dashes for lists. never numbered 1/ 2/ 3/. never "1/n" thread numbering.
-end on a question sometimes — "am i wrong?", "what are you seeing?", "early or fading?"
-about 10% light emoji, mostly 👀 🧵 👇 — never a wall of them.
-NEVER use em-dashes. use a plain hyphen or just start a new line.
-honest. when a token is down, say it's down. give both sides before a bearish take.
-naija + crypto-twitter native but always clear to an outsider. confident, not hypey.
+EMBEDDED_VOICE = """You are ghost-writing AS @cmvng. Below is how he ACTUALLY writes, distilled from 1,348 of his real tweets, plus a bank of his real posts. Match the SHAPE, RHYTHM and RESTRAINT of those examples above any generic idea of a 'good crypto post'. He openly hates long-form explainer threads (his own words: "I get tired of reading long form contents on X... the original idea for X was short form").
+
+HOW HE WRITES:
+- DIVES STRAIGHT INTO THE POINT. no throat-clearing, no "here's what i missed", no "the thing about X is", no "let me explain".
+- shares HIS OWN stake or number FIRST when he has one (rank 13, earned 7.53 quacks, took a 250 usdc loss), then opens it up to others.
+- ends many posts on a real question they must answer ("how many quacks did you get?", "above or below 800m fdv on TGE?"). a flat statement nobody can reply to is a dead post.
+- honest parenthetical asides, the human tell: "(sadly didn't expect this decline)", "(loud and proud)".
+- trailing dots "..." and "....." constantly, mid-thought and at the end. his signature.
+- lowercase, casual, phone-typed. short stacked lines, blank line between beats. small imperfections are fine, do not over-polish.
+- deep-dives are SHORT bullet facts, never essays: "be [Project]" then "- fact" "- fact" then a dry kicker ("website now offline....."). not six paragraphs of analysis.
+- real project names + real numbers always. plain hyphens only, never em-dashes. never "1/ 2/ 3/" numbering. emoji sparing (a stray 👀 🔥 👇), usually one or none.
+
+NEVER (his slop tells): bloomberg / macro-finance voice; "here's what i missed" / "the other thing that's happening" / "sounds boring. it's not" / "that changes everything" / "just took longer than anyone thought" / "here's the thing"; "privacy is the whole point" style generics; "which side are you on?" bait; hashtag spam; "hot take:"; flawless grammar; any flat hook with no personal stake and no real number.
+
+HIS REAL POSTS (imitate the shape and rhythm, do NOT reuse their facts):
+
+[update, own stake first, honest aside]
+yoooo... seems @trylimitless is trending with over 643% increase in revenue in q4
+about 7 days left for Epoch II but price is down to 98m fdv
+(sadly didn't expect this decline)
+my thesis is we get a pump when season 2 drops...
+
+[deep-dive = short bullets + dry kicker]
+be Genome
+- launch 888 genesis NFTs at 0.3 ETH
+- raise $840k+ from mint
+- TGE slated Q2 2025... then Q3... then Q4
+website now offline.....
+
+[short, own stake + question close]
+okay regardless...
+earned 7.53 quacks on wallchain yesterday
+how many Quacks did you get?
+
+[premarket take + question]
+this is how the Zama premarket chart looks like... down to 690M fdv....
+do you think it trades above 800m fdv on TGE? or below....
+
+[genuine first-person observation]
+is it only me or do i get tired of reading long form content on X... i thought the whole idea of X was short form... now i see articles everywhere like i'm reading a newspaper....
+
+[use-case woven into a real moment, not explained]
+he needed help with a quick task, so instead of a bank transfer i sent him $50 USDC on Base using @HeyElsaAI. just told Elsa what i wanted in plain language. done in seconds.
+
+[honest reflection]
+please whatever you do.. don't fall in love with any project, it always ends in tears.... 99% of the time
 """
 
 # ==================== THE BOSS ====================
@@ -551,6 +588,10 @@ SLOP_TELLS = {
    r"game.?chang", r"to the moon", r"which side are you on", r"the network is the", r"seamless", r"revolutionary"],
  "closer-cliche": [r"nobody wants to say( it)?( out loud)?", r"everyone'?s doing it", r"say the quiet part",
    r"that'?s the (funny|fact|truth|part)", r"let that sink", r"read that again", r"and somehow that'?s"],
+ "explainer-formula": [r"here'?s what i missed", r"the other thing (that'?s )?(happening|going on)", r"sounds boring\.? it'?s not",
+   r"that changes (everything|the game)", r"just took longer than anyone thought", r"here'?s the thing",
+   r"make no mistake", r"the friction between", r"is (the thing|what) .{0,40}(were|was) supposed to (be|become)",
+   r"live or die on", r"changes the game completely"],
 }
 def _slopcheck(text):
     t=(text or "").lower(); hits=[]
@@ -648,8 +689,9 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
 
     lens_txt = "\n".join("- %s: %s" % (nm, mv) for nm, mv in lenses)
     is_long = ctype in ("article", "deepdive", "educational", "airdrop")
-    fmt = ("multi-tweet thread, line breaks between tweets" if ctype in ("deepdive","educational","airdrop")
-           else "long-form article with short paragraphs" if ctype == "article"
+    fmt = ("SHORT bullet shape like his: 'be [Project]' then a few '- fact' lines then ONE dry kicker line. NOT an essay, NOT paragraphs" if ctype == "deepdive"
+           else "a short thread, a few tight tweets with line breaks between - not an essay" if ctype in ("educational", "airdrop")
+           else "short, tight - a few short lines, NOT a long-form explainer article (he hates those)" if ctype == "article"
            else "one short standalone post")
     tpl = CTYPE_TEMPLATE.get(ctype, "quote")
     schema = SLOT_SCHEMA.get(tpl, "")
