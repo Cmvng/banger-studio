@@ -1,115 +1,137 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
-  let brief = null;
   const NL = String.fromCharCode(10);
+  function E(x){return (window.esc?esc(x):String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));}
+  window.__bwHasBrief=false; window.__bwStore={};
 
-  function panelHTML(){
-    return '<div class="bf-wrap">'
-     +'<div class="bf-card"><div class="bf-lab">project</div>'
-     +'<input id="bf_proj" class="bf-in" placeholder="MegaETH" value="MegaETH">'
-     +'<div class="bf-lab">project link</div>'
-     +'<input id="bf_root" class="bf-in" placeholder="https://www.megaeth.com" value="https://www.megaeth.com">'
-     +'<button id="bf_gather" class="bf-btn">1 · gather (free)</button></div>'
-     +'<div id="bf_dossier"></div></div>';
-  }
   function styles(){
-    if($('bf_style'))return;
-    const s=document.createElement('style'); s.id='bf_style';
-    s.textContent='.bf-wrap{padding:4px 2px 40px}'
-    +'.bf-card{background:#0F1A30;border:1px solid #22314F;border-radius:16px;padding:16px;margin-bottom:14px}'
-    +'.bf-lab{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#7E93C4;margin:4px 0 6px}'
-    +'.bf-in{width:100%;background:#0A1424;border:1px solid #26365A;border-radius:10px;color:#EAF2FF;padding:12px;font-size:15px;margin-bottom:12px}'
-    +'.bf-btn{width:100%;background:#2E6BFF;color:#fff;border:0;border-radius:12px;padding:14px;font-size:15px;font-weight:800}'
-    +'.bf-facts{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}'
-    +'.bf-f{background:#0A1424;border:1px solid #26365A;border-radius:9px;padding:7px 10px;font-size:12px}'
-    +'.bf-f b{display:block;font-size:9px;color:#7E93C4;text-transform:uppercase;letter-spacing:.1em}'
-    +'.bf-sec{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#5D7BB8;margin:16px 0 8px}'
-    +'.bf-n{font-size:12px;color:#C7D6F0;padding:5px 0;border-bottom:1px solid #16223E}'
-    +'.bf-ok{color:#7CE0A0;font-size:13px;margin-bottom:4px}'
-    +'.bf-draft{background:#0A1424;border:1px solid #26365A;border-radius:12px;padding:13px;margin-bottom:11px;white-space:pre-wrap;font-size:13.5px;line-height:1.5;color:#EAF2FF}'
-    +'.bf-tags{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}'
-    +'.bf-tag{background:#16295A;color:#9FC0FF;border-radius:99px;padding:3px 10px;font-size:11px}'
-    +'.bf-use{background:#1D5DF2;color:#fff;border:0;border-radius:99px;padding:6px 14px;font-size:12px;font-weight:800}'
-    +'.bf-warn{background:#3A1220;border:1px solid #7A2340;color:#FFB4C4;border-radius:12px;padding:12px;font-size:13px}'
-    +'.bf-mut{font-size:11px;color:#8CA3CC;margin-top:6px}';
+    if($('bw_style'))return;
+    const s=document.createElement('style'); s.id='bw_style';
+    s.textContent=''
+    +'.bw-wrap{padding:4px 2px 48px}'
+    +'.bw-card{background:#fff;border:1px solid #dce6f5;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 12px 30px -14px rgba(18,58,158,.20)}'
+    +'.bw-lab{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#5D7BB8;margin:2px 0 7px}'
+    +'.bw-in,.bw-sel{width:100%;background:#F4F8FF;border:1px solid #cddaf0;border-radius:10px;color:#0B1B3A;padding:12px;font-size:15px;margin-bottom:12px;box-sizing:border-box}'
+    +'textarea.bw-in{min-height:76px;resize:vertical;line-height:1.45}'
+    +'.bw-btn{width:100%;background:linear-gradient(180deg,#2E6BFF,#123A9E);color:#fff;border:0;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer}'
+    +'.bw-btn2{width:100%;background:#EEF3FD;color:#20386A;border:1px solid #cddaf0;border-radius:11px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-bottom:12px}'
+    +'.bw-row{display:flex;gap:10px}.bw-row>div{flex:1}'
+    +'.bw-ok{color:#1B7A46;font-size:13px;font-weight:700}'
+    +'.bw-sec{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#5D7BB8;margin:16px 0 8px}'
+    +'.bw-post{background:#F4F8FF;border:1px solid #d6e2f5;border-radius:12px;padding:14px;white-space:pre-wrap;font-size:14px;line-height:1.55;color:#10254A}'
+    +'.bw-lens{font-weight:800;color:#123A9E;font-size:13px;margin-bottom:7px}'
+    +'.bw-fix{font-size:11px;color:#6C82AB;margin-top:9px;line-height:1.4}'
+    +'.bw-fix b{color:#42588A}'
+    +'.bw-facts{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}'
+    +'.bw-f{background:#F4F8FF;border:1px solid #d6e2f5;border-radius:9px;padding:7px 10px;font-size:12px;color:#22375f}'
+    +'.bw-f b{display:block;font-size:9px;color:#7E93C4;text-transform:uppercase;letter-spacing:.1em}'
+    +'.bw-tags{margin-top:11px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}'
+    +'.bw-tag{border-radius:99px;padding:4px 11px;font-size:11px;font-weight:700}'
+    +'.bw-slopok{background:#E4F7EC;color:#1B7A46}.bw-slopbad{background:#FDECEF;color:#B23A54}'
+    +'.bw-tpl{background:#E3ECFF;color:#20386A}'
+    +'.bw-fill{background:#123A9E;color:#fff;border:0;border-radius:99px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;margin-left:auto}'
+    +'.bw-warn{background:#FDECEF;border:1px solid #F3B6C2;color:#B23A54;border-radius:12px;padding:12px;font-size:13px}'
+    +'.bw-mut{font-size:11px;color:#8CA3CC;margin-top:7px}';
     document.head.appendChild(s);
   }
-  function E(x){return (window.esc?esc(x):String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));}
+
+  function panelHTML(){
+    return '<div class="bw-wrap">'
+     +'<div class="bw-card">'
+     +'<div class="bw-lab">optional · pull real facts first</div>'
+     +'<div class="bw-row"><div><input id="bw_proj" class="bw-in" placeholder="project e.g. Wallchain" style="margin-bottom:0"></div>'
+     +'<div style="max-width:120px"><input id="bw_root" class="bw-in" placeholder="link" style="margin-bottom:0"></div></div>'
+     +'<div style="height:10px"></div>'
+     +'<button id="bw_gather" class="bw-btn2">pull facts (free)</button>'
+     +'<div id="bw_facts"></div>'
+     +'<div class="bw-lab">what\'s it about</div>'
+     +'<textarea id="bw_topic" class="bw-in" placeholder="topic or paste facts... e.g. rank 13 on wallchain, 7.53 quacks yesterday, quacks convert at TGE"></textarea>'
+     +'<div class="bw-row">'
+     +'<div><div class="bw-lab">type</div><select id="bw_type" class="bw-sel">'
+     +'<option value="deepdive">deep-dive → threadcover</option>'
+     +'<option value="alpha">alpha → bignum</option>'
+     +'<option value="update">update → bignum</option>'
+     +'<option value="airdrop">airdrop → stack</option>'
+     +'<option value="educational">educational → stack</option>'
+     +'<option value="banger">banger → quote</option>'
+     +'<option value="viral">viral → quote</option>'
+     +'<option value="article">article → threadcover</option>'
+     +'</select></div>'
+     +'<div style="max-width:96px"><div class="bw-lab">versions</div><select id="bw_n" class="bw-sel"><option>2</option><option>1</option><option>3</option></select></div>'
+     +'</div>'
+     +'<button id="bw_go" class="bw-btn">write + design it (fires api · cents)</button>'
+     +'<div class="bw-mut">runs the critique loop, then fills your real template. the api only fires on this button.</div>'
+     +'</div>'
+     +'<div id="bw_out"></div></div>';
+  }
 
   async function gather(){
-    const proj=$('bf_proj').value, root=$('bf_root').value;
-    $('bf_dossier').innerHTML='<div class="bf-card">gathering… opening the site, pulling numbers, reading X…</div>';
+    const proj=$('bw_proj').value, root=$('bw_root').value;
+    if(!proj){ return; }
+    $('bw_facts').innerHTML='<div class="bw-mut">gathering… opening the site, pulling numbers, reading X…</div>';
     try{
       const r=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:proj,root:root})});
-      const j=await r.json(); brief=j.brief; renderDossier(j.brief);
-    }catch(e){ $('bf_dossier').innerHTML='<div class="bf-card"><div class="bf-warn">could not gather. try again.</div></div>'; }
+      const j=await r.json(); const b=j.brief||{}; window.__bwHasBrief=true;
+      const facts=Object.keys(b.live_numbers||{}).map(k=>'<div class="bw-f"><b>'+E(k)+'</b>'+E(b.live_numbers[k])+'</div>').join('')||'<div class="bw-mut">no live numbers found — type facts above.</div>';
+      $('bw_facts').innerHTML='<div class="bw-ok" style="margin:2px 0 6px">✓ facts pulled · $0.00 · will be used in the write</div><div class="bw-facts">'+facts+'</div>';
+    }catch(e){ $('bw_facts').innerHTML='<div class="bw-warn">could not gather. type facts above instead.</div>'; }
   }
-  function renderDossier(b){
-    const facts=Object.keys(b.live_numbers||{}).map(k=>'<div class="bf-f"><b>'+E(k)+'</b>'+E(b.live_numbers[k])+'</div>').join('')||'—';
-    const news=(b.news_feed||[]).map(x=>'<div class="bf-n">'+E(x)+'</div>').join('')||'—';
-    const xp=(b.x_pulse||[]).map(p=>'<div class="bf-n">'+E(p.src)+' · '+E(p.text)+'</div>').join('')||'—';
-    $('bf_dossier').innerHTML='<div class="bf-card"><div class="bf-ok">✓ boss done · cost so far $0.00</div>'
-      +'<div class="bf-sec">live numbers</div><div class="bf-facts">'+facts+'</div>'
-      +'<div class="bf-sec">news</div>'+news
-      +'<div class="bf-sec">x pulse</div>'+xp+'</div>'
-      +'<div class="bf-card"><div class="bf-lab">2 · your angle</div>'
-      +'<textarea id="bf_angle" class="bf-in" style="min-height:64px" placeholder="push the ecosystem apps, skip price, honest but bullish"></textarea>'
-      +'<button id="bf_write" class="bf-btn">3 · write it (fires api · cents)</button>'
-      +'<div class="bf-mut">the api only runs on this button. nothing runs on a timer.</div></div>'
-      +'<div id="bf_out"></div>';
-    $('bf_write').onclick=write;
-  }
-  async function write(){
-    const angle=$('bf_angle').value;
-    $('bf_out').innerHTML='<div class="bf-card">writing… one small api call on the gathered brief…</div>';
+
+  async function compose(){
+    const topic=$('bw_topic').value, type=$('bw_type').value, n=+$('bw_n').value;
+    if(!topic.trim()){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">type what it\'s about first.</div></div>'; return; }
+    $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">writing '+n+' version(s) through the loop, then designing…</div></div>';
     try{
-      const r=await fetch('/write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({angle:angle,th:2,po:4,qt:4})});
-      const j=await r.json(); renderDrafts(j);
-    }catch(e){ $('bf_out').innerHTML='<div class="bf-card"><div class="bf-warn">write failed. try again.</div></div>'; }
+      const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief})});
+      const res=await r.json(); renderVersions(res);
+    }catch(e){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">write failed. try again.</div></div>'; }
   }
-  function renderDrafts(res){
-    if(res.error){ $('bf_out').innerHTML='<div class="bf-card"><div class="bf-warn">'+E(res.error)+'<br><br>'+E(res.message||'')+'</div></div>'; return; }
-    const d=res.drafts||{}; let out='<div class="bf-card"><div class="bf-ok">✓ drafts ready · run $'+E(res.run_cost_usd)+' · month $'+E(res.month_spent_usd)+'</div></div>';
-    const groups=[['threads','THREADS'],['posts','POSTS'],['qts','QUOTE-TWEETS']];
-    let idx=0; window.__bfDrafts={};
-    groups.forEach(function(gp){
-      const items=d[gp[0]]||[]; if(!items.length)return;
-      out+='<div class="bf-sec">'+gp[1]+'</div>';
-      items.forEach(function(it){
-        const id='d'+(idx++); window.__bfDrafts[id]=it;
-        const img=it.image?'<span class="bf-tag">img: '+E(it.image)+'</span>':'';
-        out+='<div class="bf-draft">'+E(it.draft||'')
-          +'<div class="bf-tags"><span class="bf-tag">design: '+E(it.template||'—')+'</span>'+img
-          +'<button class="bf-use" onclick="__bfUse(\''+id+'\')">use in a template ↗</button></div></div>';
-      });
+
+  function renderVersions(res){
+    if(res.error){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">'+E(res.error)+'<br><br>'+E(res.message||'')+'</div></div>'; return; }
+    const vs=res.versions||[]; if(!vs.length){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">no versions came back.</div></div>'; return; }
+    window.__bwStore={};
+    let out='<div class="bw-card"><div class="bw-ok">✓ '+vs.length+' version(s) · '+E(res.type_label||'')+' · run $'+E(res.run_cost_usd)+' · month $'+E(res.month_spent_usd)+'</div></div>';
+    vs.forEach(function(v,i){
+      const id='v'+i; window.__bwStore[id]=v;
+      const slop=v.slop||[];
+      const slopTag=slop.length?'<span class="bw-tag bw-slopbad">⚠ slop: '+E(slop.join(', '))+'</span>':'<span class="bw-tag bw-slopok">✓ clean</span>';
+      const fix=v.critique?'<div class="bw-fix"><b>loop fixed:</b> '+E(v.critique)+'</div>':'';
+      out+='<div class="bw-card">'
+        +'<div class="bw-lens">'+E(v.lens||('version '+(i+1)))+'</div>'
+        +'<div class="bw-post">'+E(v.draft||'')+'</div>'
+        +fix
+        +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'—')+'</span>'+slopTag
+        +'<button class="bw-fill" onclick="__bwFill(\''+id+'\')">fill the '+E(v.template||'template')+' →</button></div>'
+        +'</div>';
     });
-    $('bf_out').innerHTML=out;
+    $('bw_out').innerHTML=out;
   }
-  window.__bfUse=function(id){
-    const it=(window.__bfDrafts||{})[id]; if(!it)return;
-    const tpl=(it.template&&T[it.template])?it.template:'minimal';
+
+  window.__bwFill=function(id){
+    const v=(window.__bwStore||{})[id]; if(!v)return;
+    const tpl=(v.template&&T[v.template])?v.template:'quote';
     openT(tpl);
-    // bring the canvas forward: leave the writer screen + its body mode
+    const slots=v.slots||{};
+    const ids=(T[tpl].slots||[]).map(function(s){return s.id;});
+    Object.keys(slots).forEach(function(k){ if(ids.indexOf(k)>=0){ try{ setV(k, String(slots[k])); }catch(e){} } });
+    // fallback: if nothing matched, put first line into first text slot
+    var matched=Object.keys(slots).some(function(k){return ids.indexOf(k)>=0;});
+    if(!matched){ var line=(v.draft||'').split(NL).find(function(x){return x.trim();})||''; var ts=(T[tpl].slots||[]).filter(function(s){return s.t==='text';}); if(ts[0])setV(ts[0].id,line.slice(0,90)); }
+    // bring the editor forward
     var ws=$('wscr'); if(ws)ws.classList.remove('on');
     document.body.classList.remove('bmode');
     document.querySelectorAll('.screen').forEach(function(x){x.classList.remove('on');});
     var ed=$('editor'); if(ed)ed.classList.add('on');
-    const parts=(it.draft||'').split(NL); let line='';
-    for(let i=0;i<parts.length;i++){ if(parts[i].trim()){line=parts[i].trim();break;} }
-    const slots=T[tpl].slots.filter(function(s){return s.t==='text';}).map(function(s){return s.id;});
-    const prefs=['head','t','l1','big','q','title','headline'];
-    let pref=null;
-    for(let i=0;i<prefs.length;i++){ if(slots.indexOf(prefs[i])>=0){pref=prefs[i];break;} }
-    if(!pref)pref=slots[0];
-    if(pref)setV(pref,line.slice(0,90));
     window.scrollTo(0,0);
   };
+
   function mountIntoWriter(){
     const ws=$('wscr'); if(!ws)return;
-    const body=ws.querySelector('.wbody'); if(!body||body.dataset.bf)return;
-    styles(); body.dataset.bf='1'; body.innerHTML=panelHTML();
-    $('bf_gather').onclick=gather;
+    const body=ws.querySelector('.wbody'); if(!body||body.dataset.bw)return;
+    styles(); body.dataset.bw='1'; body.innerHTML=panelHTML();
+    $('bw_gather').onclick=gather; $('bw_go').onclick=compose;
   }
   if(typeof window.goWriter==='function'){
     const orig=window.goWriter;
