@@ -567,7 +567,7 @@ CRITIQUE_RUBRIC = ("MANDATORY LOOP: for each version, silently write a first dra
  "(6) ends on a real thought or an answerable question, never vague bait  (7) he'd actually post it, not scroll past muttering 'AI slop'. "
  "Output ONLY the revised final + a 1-line note of what you fixed.")
 
-def write_styled(topic, ctype, n=3, brief=None, voice=None):
+def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     """One topic -> several studied LENSES, each run through the critique loop, each with its real-template slots filled. One API call."""
     if not API_KEY:
         return {'error': 'no_api_key', 'message': 'Set ANTHROPIC_API_KEY in Railway variables.'}
@@ -577,7 +577,7 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None):
     lenses = lenses[:n]
     voice = voice or DEFAULT_VOICE
 
-    est = (900 * PRICE['in'] + MAX_TOK * PRICE['out']) / 1_000_000
+    est = ((900 + 1700 * len(images or [])) * PRICE['in'] + MAX_TOK * PRICE['out']) / 1_000_000
     ok, sofar = _spend_ok(est)
     if not ok:
         return {'error': 'cap_reached', 'message': 'Monthly cap $%.2f reached (spent $%.2f).' % (SPEND_CAP, sofar)}
@@ -601,14 +601,26 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None):
         "Fill every slot FROM the final post - short, punchy, real, same no-slop bar.\n\n"
         "Return STRICT JSON, no prose, no markdown fences:\n"
         '{"versions":[{"lens":"<lens name>","draft":"<the FINAL revised post>","critique":"<1 line: what the loop fixed>",'
-        '"template":"%s","slots":{<exactly the slot keys above, as key:value>},"image":""}]}'
+        '"template":"%s","slots":{<exactly the slot keys above, as key:value>},"image":""}]}. '
+        'If you do NOT have enough real facts to write without inventing anything, return exactly '
+        '{"versions":[],"need":"<one short line naming the specific facts you need>"} and no other text.'
         % (n, fmt, lens_txt, tpl, schema, tpl))
-    user = "CONTENT TYPE: %s\nTOPIC:\n%s" % (TYPE_LABEL.get(ctype, ctype), topic or "(none given)")
+    if images:
+        sys_prompt += ("\n\nSCREENSHOTS ATTACHED: they contain someone's existing content (a post, article, or notes). "
+            "First read them fully - that content is the SOURCE MATERIAL, even if the topic text just says 'rewrite this'. "
+            "REWRITE it through the lenses in HIS voice: keep the real facts and numbers from the screenshots, "
+            "drop the original's phrasing entirely, same no-slop bar. Never copy sentences.")
+    user = "CONTENT TYPE: %s\nTOPIC:\n%s" % (TYPE_LABEL.get(ctype, ctype), topic or "(rewrite the attached content)")
     if brief:
         user += "\n\nBRIEF (real facts to use, do not invent beyond this):\n" + json.dumps(brief, ensure_ascii=False)[:3500]
+    content = []
+    for im in (images or [])[:3]:
+        content.append({'type': 'image', 'source': {'type': 'base64',
+            'media_type': im.get('media_type', 'image/jpeg'), 'data': im.get('data', '')}})
+    content.append({'type': 'text', 'text': user})
 
     body = json.dumps({'model': MODEL, 'max_tokens': MAX_TOK, 'system': sys_prompt,
-                       'messages': [{'role': 'user', 'content': user}]}).encode()
+                       'messages': [{'role': 'user', 'content': content}]}).encode()
     req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={
         'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01'})
     try:
@@ -627,7 +639,13 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None):
     try:
         parsed = json.loads(text); versions = parsed.get('versions', [])
     except Exception:
+        low = text.lower()
+        if any(k in low for k in ('need', 'not enough', 'give me', 'what is', 'provide', 'more detail', "don't have", 'no facts', 'facts about', 'more context')):
+            return {'error': 'need_facts', 'message': text[:500]}
         return {'error': 'parse', 'message': text[:400]}
+    if not versions:
+        need = parsed.get('need') or parsed.get('message') or ''
+        return {'error': 'need_facts', 'message': need or 'the writer needs real facts on this first.'}
     for v in versions:
         v['slop'] = _slopcheck(v.get('draft', ''))
         v.setdefault('template', CTYPE_TEMPLATE.get(ctype, 'quote'))
@@ -850,9 +868,16 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/compose':
             try: brief = json.load(open(BRIEF_FILE))
             except Exception: brief = None
+            imgs = []
+            for s in (data.get('images') or [])[:3]:
+                s = str(s)
+                if s.startswith('data:') and ';base64,' in s:
+                    head, b64 = s.split(';base64,', 1)
+                    imgs.append({'media_type': head[5:] or 'image/jpeg', 'data': b64})
             res = write_styled(data.get('topic', ''), data.get('type', 'banger'),
                                n=int(data.get('n', 3)),
-                               brief=(brief if data.get('usebrief') else None), voice=voice())
+                               brief=(brief if data.get('usebrief') else None), voice=voice(),
+                               images=imgs)
             return self._send(200, json.dumps(res), 'application/json')
         return self._send(404, 'no route')
 
