@@ -551,6 +551,22 @@ def _slopcheck(text):
             if _slopre.search(p,t,_slopre.M): hits.append(cat); break
     return hits
 
+def _numtokens(text):
+    """normalized numeric tokens: $0.0002 / 7.53 / 20% / 1,200 -> canonical strings"""
+    out=set()
+    for m in _slopre.findall(r'\d[\d,]*\.?\d*', str(text or '')):
+        out.add(m.replace(',','').rstrip('.'))
+    return out
+
+def _factcheck(draft, source_text):
+    """numbers in the draft that never appear in the given facts = likely fabricated"""
+    src=_numtokens(source_text); alien=[]
+    for n in sorted(_numtokens(draft)):
+        if n in src: continue
+        if n in alien: continue
+        alien.append(n)
+    return alien
+
 # content-type -> the ONE real template it fills, and that template's slot schema
 CTYPE_TEMPLATE = {"deepdive":"threadcover","article":"threadcover","alpha":"bignum",
  "educational":"stack","airdrop":"stack","banger":"quote","viral":"quote","update":"bignum"}
@@ -566,6 +582,12 @@ CRITIQUE_RUBRIC = ("MANDATORY LOOP: for each version, silently write a first dra
  "(5) ZERO AI tells or cliches ('sleeping on it','nobody's talking about','let me show you','the truth about','game-changer','heating up')  "
  "(6) ends on a real thought or an answerable question, never vague bait  (7) he'd actually post it, not scroll past muttering 'AI slop'. "
  "Output ONLY the revised final + a 1-line note of what you fixed.")
+HARD_FACT_RULE = ("HARD FACT RULE (overrides everything, including the rubric and the lenses): every number, price, event, "
+ "and first-person experience in your output must come from the topic, brief, or screenshots. NEVER fabricate a personal "
+ "story, trade, loss, rank, timeframe, or price to satisfy a lens or to make the post 'self-implicating' - a rubric point "
+ "met with an invented fact is a FAIL, not a pass. If a lens calls for a personal anecdote and none was provided, change "
+ "the angle to an honest observation of what IS given. If the facts are too thin to write anything true, return the "
+ "need-facts JSON instead of inventing.")
 
 def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     """One topic -> several studied LENSES, each run through the critique loop, each with its real-template slots filled. One API call."""
@@ -594,6 +616,7 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
         "do NOT invent facts, numbers, or projects not in the topic/brief. Match this VOICE exactly:\n" + voice +
         "\n\n" + FOUNDATION +
         "\n\n" + CRITIQUE_RUBRIC +
+        "\n\n" + HARD_FACT_RULE +
         "\n\nWrite %d DIFFERENT versions of the SAME topic, each through a different studied LENS below. "
         "Every version is unmistakably HIS voice - the lens only changes the ANGLE and craft move. "
         "Each version is a %s.\n\nLENSES:\n%s\n\n"
@@ -646,8 +669,10 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     if not versions:
         need = parsed.get('need') or parsed.get('message') or ''
         return {'error': 'need_facts', 'message': need or 'the writer needs real facts on this first.'}
+    srctext = (topic or '') + ' ' + (json.dumps(brief, ensure_ascii=False) if brief else '')
     for v in versions:
         v['slop'] = _slopcheck(v.get('draft', ''))
+        v['invented'] = ([] if images else _factcheck(v.get('draft', ''), srctext))
         v.setdefault('template', CTYPE_TEMPLATE.get(ctype, 'quote'))
         v.setdefault('slots', {})
         v.setdefault('critique', '')
