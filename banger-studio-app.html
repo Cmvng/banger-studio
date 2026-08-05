@@ -137,7 +137,8 @@ h1.greet{font-weight:800;font-size:32px;letter-spacing:-.02em;margin-top:12px}
  background:linear-gradient(165deg,#2E6BFF,#123A9E);
  box-shadow:0 26px 54px -18px rgba(18,58,158,.55)}
 #bscr .el-shot .inner{width:100%;height:100%;border-radius:18px;overflow:hidden;background:#cdddf6}
-#bscr .el-shot img{width:100%;height:100%;object-fit:cover;display:block}
+#bscr .el-shot img{width:100%;height:100%;object-fit:contain;display:block}
+#bscr .el-doodle{line-height:0}#bscr .el-doodle svg{display:block}
 #bscr .el-shot .ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
  color:#fff;font:700 24px 'Space Mono';opacity:.9;text-align:center;padding:20px;line-height:1.5}
 #bscr .el-char{background:#fff;border-radius:18px;padding:22px 18px 12px;position:relative;
@@ -298,6 +299,7 @@ body.bmode #libbtn,body.bmode #tray{display:none!important}
  <button class="ghost" onclick="bdHome()" style="padding:9px 12px">&#8592;</button><div class="mk">&#9670;</div><div class="bdword"><i>builder</i></div>
  <div class="sp"></div>
  <button class="ghost" id="bd_undoBtn" disabled>undo</button>
+ <button class="ghost" onclick="clearAll()" style="padding:9px 12px">clear</button>
  <button class="ghost" onclick="saveComp()" style="padding:9px 12px">save</button><button class="exp" id="bd_expBtn">export</button>
 </div>
 <div class="fmts" id="bd_fmts"></div>
@@ -2164,7 +2166,8 @@ function make(type,opts){
  const el={id:++uid,type,x:0,y:0,w:0,rot:0,z:++zc};
  if(type==='text'){el.text=opts.text||'tap twice to edit';el.w=620;el.size=76;el.color='#0C1B33';}
  else if(type==='logo'){el.key=opts.key||'btc';el.w=210;}
- else if(type==='shot'){el.src=opts.src||'';el.w=360;}
+ else if(type==='shot'){el.src=opts.src||'';el.w=360;el.ar=opts.ar||2;}
+ else if(type==='doodle'){el.kind=opts.kind||'orbit';el.w=210;}
  else if(type==='char'){el.w=340;}
  else if(type==='chip'){el.w=420;}
  clampW(el);
@@ -2174,8 +2177,18 @@ function make(type,opts){
  els.push(el); clampPos(el); renderEl(el); select(el.id); hint.style.opacity=0;
  return el;
 }
+const DOODLES={
+ orbit:{ar:66/230,svg:w=>'<svg width="'+w+'" height="'+(w*66/230)+'" viewBox="0 0 230 66" fill="none"><ellipse cx="115" cy="30" rx="108" ry="24" stroke="#9DBDF9" stroke-width="3.5" transform="rotate(-2 115 30)"/><path d="M196 50 C160 62 120 64 92 60" stroke="#123A9E" stroke-width="3.5" stroke-linecap="round"/><path d="M104 52 L88 61 L104 68" stroke="#123A9E" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'},
+ arrow:{ar:46/120,svg:w=>'<svg width="'+w+'" height="'+(w*46/120)+'" viewBox="0 0 120 46" fill="none"><path d="M6 10 C 40 40 80 42 108 30" stroke="#123A9E" stroke-width="4" stroke-linecap="round" fill="none"/><path d="M96 22 L112 28 L100 40" stroke="#123A9E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'},
+ sparkle:{ar:1,svg:w=>'<svg width="'+w+'" height="'+w+'" viewBox="0 0 34 34"><path d="M17 2 L20 13 L31 17 L20 21 L17 32 L14 21 L3 17 L14 13 Z" fill="#1D5DF2" opacity=".85"/></svg>'},
+ squiggle:{ar:120/26,svg:w=>'<svg width="'+w+'" height="'+(w*120/26)+'" viewBox="0 0 26 120" fill="none"><path d="M13 4 C 22 24 4 44 13 64 C 22 84 4 104 13 116" stroke="#9DBDF9" stroke-width="4" stroke-linecap="round"/></svg>'},
+ dots:{ar:58/12,svg:w=>'<svg width="'+w+'" height="'+(w*58/12)+'" viewBox="0 0 12 58"><circle cx="6" cy="6" r="5.5" fill="#1D5DF2"/><circle cx="6" cy="29" r="5.5" fill="#1D5DF2" opacity=".6"/><circle cx="6" cy="52" r="5.5" fill="#1D5DF2" opacity=".3"/></svg>'},
+ plus:{ar:24/64,svg:w=>'<svg width="'+w+'" height="'+(w*24/64)+'" viewBox="0 0 64 24"><text x="0" y="19" font-family="\'Space Mono\',monospace" font-size="20" letter-spacing="14" fill="#9DBDF9">++</text></svg>'}
+};
+const DOODLE_KINDS=Object.keys(DOODLES);
 function guessH(el){
- if(el.type==='shot')return el.w*2;
+ if(el.type==='doodle')return el.w*(DOODLES[el.kind]||DOODLES.orbit).ar;
+ if(el.type==='shot')return el.w*(el.ar||2);
  if(el.type==='logo')return el.w;
  if(el.type==='img')return el.w*(el.ar||1);
  if(el.type==='chip')return el.w*0.25;
@@ -2186,7 +2199,8 @@ function logoMarkup(key){const u=LG(key);return u?'<img src="'+u+'">':'';}
 function innerHTML(el){
  if(el.type==='text')return '<div class="el-text" style="font-size:'+el.size+'px;color:'+el.color+(el.ff?';font-family:'+el.ff:'')+(el.fw?';font-weight:'+el.fw:'')+(el.fst?';font-style:'+el.fst:'')+(el.lh?';line-height:'+el.lh:'')+(el.pre?';white-space:pre-wrap':'')+'">'+esc(el.text)+'</div>';
  if(el.type==='logo')return '<div class="el-logo" style="width:'+el.w+'px;height:'+el.w+'px;border-radius:'+(el.w*0.143)+'px">'+logoMarkup(el.key)+'</div>';
- if(el.type==='shot')return '<div class="el-shot" style="width:'+el.w+'px;height:'+(el.w*2)+'px"><div class="inner">'+(el.src?'<img src="'+el.src+'">':'<div class="ph">tap +<br>add your<br>screenshot</div>')+'</div></div>';
+ if(el.type==='doodle')return '<div class="el-doodle">'+(DOODLES[el.kind]||DOODLES.orbit).svg(el.w)+'</div>';
+ if(el.type==='shot')return '<div class="el-shot" style="width:'+el.w+'px;height:'+(el.w*(el.ar||2))+'px"><div class="inner">'+(el.src?'<img src="'+el.src+'">':'<div class="ph">tap +<br>add your<br>screenshot</div>')+'</div></div>';
  if(el.type==='char')return '<div class="el-char" style="width:'+el.w+'px"><div class="tape"></div><img src="'+CHAR+'"></div>';
  if(el.type==='img')return '<div class="el-img" style="width:'+el.w+'px"><img src="'+el.src+'"></div>';
  if(el.type==='chip')return '<div class="el-chip" style="gap:'+(el.w*0.038)+'px"><div class="a" style="width:'+(el.w*0.229)+'px;height:'+(el.w*0.229)+'px"><img src="'+AV+'"></div><span style="font-size:'+(el.w*0.09)+'px">@cmvng</span></div>';
@@ -2328,6 +2342,7 @@ function drawOverlay(gx,gy){
    btn('front','<path d="M12 3l8 5-8 5-8-5 8-5z"/><path d="M4 13l8 5 8-5"/>')+
    (el.type==='logo'?btn('swap','<path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/>'):'')+
    (el.type==='shot'?btn('pic','<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/>'):'')+
+   (el.type==='doodle'?btn('cyc','<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>'):'')+
    btn('del','<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>','del');
  ov.appendChild(tb);
  tb.querySelector('[data-a=dup]').onclick=()=>dup(el);
@@ -2335,6 +2350,7 @@ function drawOverlay(gx,gy){
  tb.querySelector('[data-a=del]').onclick=()=>del(el);
  const sw=tb.querySelector('[data-a=swap]'); if(sw)sw.onclick=()=>openSheet(el);
  const pc=tb.querySelector('[data-a=pic]'); if(pc)pc.onclick=()=>{pendingShot=false;document.getElementById('bd_file').click();};
+ const cy=tb.querySelector('[data-a=cyc]'); if(cy)cy.onclick=()=>{snapshot();el.kind=DOODLE_KINDS[(DOODLE_KINDS.indexOf(el.kind)+1)%DOODLE_KINDS.length];renderEl(el);drawOverlay();};
  rh.addEventListener('pointerdown',e=>startResize(e,el));
  roth.addEventListener('pointerdown',e=>startRotate(e,el));
 }
@@ -2411,6 +2427,7 @@ const RAIL=[
  ['logo','coin','<circle cx="12" cy="12" r="8"/><path d="M12 8v8M9 10h5a2 2 0 010 4H9"/>'],
  ['shot','screenshot','<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 21h8"/>'],
  ['char','character','<circle cx="12" cy="8" r="4"/><path d="M5 21c0-4 3-6 7-6s7 2 7 6"/>'],
+ ['doodle','doodle','<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>'],
  ['chip','@cmvng','<circle cx="9" cy="9" r="4"/><path d="M15 15h5M15 11h4"/>'],
 ];
 const rail=document.getElementById('bd_rail');
@@ -2424,9 +2441,12 @@ RAIL.forEach(r=>{const t=r[0];const b=document.createElement('button');b.classNa
 let pendingShot=false;
 document.getElementById('bd_file').onchange=e=>{
  const f=e.target.files[0];if(!f)return;const rd=new FileReader();
- rd.onload=()=>{const cur=byId(sel);
-   if(cur&&cur.type==='shot'&&!pendingShot){snapshot();cur.src=rd.result;renderEl(cur);drawOverlay();}
-   else make('shot',{src:rd.result});pendingShot=false;};
+ rd.onload=()=>{const im=new Image();im.onload=()=>{
+   const ar=im.naturalHeight/Math.max(1,im.naturalWidth);
+   const cur=byId(sel);
+   if(cur&&cur.type==='shot'&&!pendingShot){snapshot();cur.src=rd.result;cur.ar=ar;renderEl(cur);drawOverlay();}
+   else make('shot',{src:rd.result,ar:ar});pendingShot=false;};
+  im.src=rd.result;};
  rd.readAsDataURL(f);e.target.value='';
 };
 
@@ -2451,6 +2471,7 @@ async function exportPNG(download){
 
 /* ---------- headless test api ---------- */
 function clearAll(){snapshot();els=[];canvas.innerHTML='';deselect();}
+window.clearAll=clearAll;
 function importEls(list,fmtKey){
  snapshot();
  els=[];canvas.innerHTML='';deselect();
