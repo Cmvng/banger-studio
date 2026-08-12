@@ -71,6 +71,14 @@
     +'.bw-needcard{border-color:#F0DCA0!important}'
     +'.bw-needh{font-weight:800;color:#8A6D1F;font-size:14.5px;margin-bottom:6px}'
     +'.bw-needb{font-size:13px;color:#5C4A18;margin-bottom:9px}'
+    +'.bw-edit{background:#EEF3FD;color:#20386A;border:1px solid #cddaf0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;cursor:pointer}'
+    +'.bw-editbox{margin-top:11px;background:#F4F8FF;border:1px solid #cddaf0;border-radius:12px;padding:12px}'
+    +'.bw-editbox textarea{width:100%;box-sizing:border-box;min-height:90px;background:#fff;border:1px solid #cddaf0;border-radius:10px;padding:11px;font-size:14px;line-height:1.5;color:#10254A;resize:vertical;margin-bottom:9px}'
+    +'.bw-editrow{display:flex;gap:9px}'
+    +'.bw-editsave{flex:1;background:linear-gradient(180deg,#2E6BFF,#123A9E);color:#fff;border:0;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer}'
+    +'.bw-editcancel{background:#fff;color:#5D7BB8;border:1px solid #cddaf0;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:700;cursor:pointer}'
+    +'.bw-editnote{font-size:10.5px;color:#7E93C4;margin-top:8px;line-height:1.4}'
+    +'.bw-lesson{background:#E4F7EC;border:1px solid #b9e6cb;color:#1B7A46;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-top:9px}'
     +'.bw-mut{font-size:11px;color:#8CA3CC;margin-top:7px}';
     document.head.appendChild(s);
   }
@@ -159,7 +167,9 @@
         +fix
         +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'&mdash;')+'</span>'+fixedTag+slopTag+invTag+fabTag
         +'<button class="bw-copy" data-id="'+id+'">copy</button>'
+        +'<button class="bw-edit" data-id="'+id+'">&#9998; my edit</button>'
         +'<button class="bw-fill" onclick="__bwFill(\''+id+'\')">fill the '+E(v.template||'template')+' &#8594;</button></div>'
+        +'<div class="bw-editslot" data-slot="'+id+'"></div>'
         +'</div>';
     });
     $('bw_out').innerHTML=out;
@@ -204,7 +214,39 @@
     const orig=window.goWriter;
     window.goWriter=function(){ orig(); setTimeout(mountIntoWriter,30); };
   }
+  function editBoxHTML(id, txt){
+    return '<div class="bw-editbox">'
+      +'<textarea id="bw_edittxt_'+id+'">'+E(txt)+'</textarea>'
+      +'<div class="bw-editrow"><button class="bw-editsave" data-id="'+id+'">save & learn</button>'
+      +'<button class="bw-editcancel" data-id="'+id+'">cancel</button></div>'
+      +'<div class="bw-editnote">what you post is the real answer. this teaches the writer to stop making the mistake you just fixed \u2014 it does not overwrite your draft above.</div>'
+      +'</div>';
+  }
+
+  async function saveEdit(id){
+    var slot=document.querySelector('.bw-editslot[data-slot="'+id+'"]'); if(!slot)return;
+    var ta=$('bw_edittxt_'+id); if(!ta)return;
+    var v=(window.__bwStore||{})[id]; var original=v?(v.draft||''):'';
+    var edited=ta.value;
+    var btn=slot.querySelector('.bw-editsave'); if(btn){ btn.textContent='learning\u2026'; btn.disabled=true; }
+    try{
+      var r=await fetch('/learn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original:original,edited:edited})});
+      var j=await r.json();
+      if(j.error){ slot.innerHTML='<div class="bw-editnote">'+E(j.message||'nothing to learn.')+'</div>'; return; }
+      slot.innerHTML='<div class="bw-lesson">&#10003; learned: '+E(j.lesson||'saved')+'</div>';
+    }catch(e){ slot.innerHTML='<div class="bw-warn">could not save the edit. try again.</div>'; }
+  }
+
   document.addEventListener('click',function(e){
+    var ed=e.target.closest?e.target.closest('.bw-edit'):null;
+    if(ed){ var id=ed.getAttribute('data-id'); var slot=document.querySelector('.bw-editslot[data-slot="'+id+'"]');
+      if(slot){ var v=(window.__bwStore||{})[id]; var txt=v?(v.draft||''):'';
+        slot.innerHTML = slot.innerHTML ? '' : editBoxHTML(id, txt); }
+      e.stopPropagation(); return; }
+    var es=e.target.closest?e.target.closest('.bw-editsave'):null;
+    if(es){ saveEdit(es.getAttribute('data-id')); e.stopPropagation(); return; }
+    var ec=e.target.closest?e.target.closest('.bw-editcancel'):null;
+    if(ec){ var id2=ec.getAttribute('data-id'); var slot2=document.querySelector('.bw-editslot[data-slot="'+id2+'"]'); if(slot2)slot2.innerHTML=''; e.stopPropagation(); return; }
     var cp=e.target.closest?e.target.closest('.bw-copy'):null;
     if(cp){ var v=(window.__bwStore||{})[cp.getAttribute('data-id')]; var txt=v?(v.draft||''):'';
       var done=function(){ cp.textContent='copied \u2713'; setTimeout(function(){cp.textContent='copy';},1400); };
