@@ -167,6 +167,13 @@ h1.greet{font-weight:800;font-size:32px;letter-spacing:-.02em;margin-top:12px}
 #bd_cgrid button{background:#F4F8FF;border:1px solid #dce6f5;border-radius:12px;padding:8px 4px 6px;cursor:pointer;content-visibility:auto;contain-intrinsic-size:74px}
 #bd_cgrid button i{display:block;margin-top:4px;font-family:'Space Mono',monospace;font-size:8.5px;font-style:normal;color:#5D7BB8;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #bd_dgrid button{background:#F4F8FF;border:1px solid #dce6f5;border-radius:12px;padding:10px 6px;display:flex;align-items:center;justify-content:center;min-height:70px;cursor:pointer}
+#bd_gen{background:#F4F8FF;border:1px solid #dce6f5;border-radius:14px;padding:12px;margin-bottom:12px}
+.genrow{display:flex;gap:8px;margin-bottom:9px}
+.genrow select{flex:1;background:#fff;border:1px solid #cddaf0;border-radius:9px;padding:9px;font-family:'Sora',sans-serif;font-size:13.5px;color:#0B1B3A}
+.genbtn{width:100%;background:linear-gradient(180deg,#2E6BFF,#123A9E);color:#fff;border:0;border-radius:10px;padding:11px;font-size:13.5px;font-weight:800;cursor:pointer}
+.genbtn:disabled{opacity:.6}
+.genmsg{margin-top:9px;font-size:12px;color:#5D7BB8;background:#fff;border:1px solid #dce6f5;border-radius:9px;padding:9px 11px;line-height:1.45}
+.genmsg.generr{color:#B23A54;background:#FDECEF;border-color:#F3B6C2}
 #bscr .el-shot .ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;
  color:#fff;font:700 24px 'Space Mono';opacity:.9;text-align:center;padding:20px;line-height:1.5}
 #bscr .el-char{background:#fff;border-radius:18px;padding:22px 18px 12px;position:relative;
@@ -241,7 +248,7 @@ h1.greet{font-weight:800;font-size:32px;letter-spacing:-.02em;margin-top:12px}
 #bscr .tsw{display:block;width:22px;height:22px;border-radius:7px;background:linear-gradient(160deg,#8FB2FF,#2E6BFF)}
 #bscr .grid{align-content:start;grid-auto-rows:min-content}
 #bscr .gi{align-self:start}
-#bscr .el-img img{width:100%;height:auto;display:block;border-radius:12px}
+#bscr .el-img img{width:100%;height:100%;object-fit:contain;display:block;border-radius:12px}
 body.bmode #libbtn,body.bmode #tray{display:none!important}
 .bldcta{display:flex;align-items:center;gap:12px;width:100%;margin:14px 0 2px;padding:14px 16px;border:1px solid #D7E3F8;border-radius:18px;background:#fff;box-shadow:0 10px 24px -18px rgba(30,70,160,.45);font-family:'Sora';text-align:left}
 .bldcta .bic{width:40px;height:40px;border-radius:12px;background:linear-gradient(160deg,#3D74FF,#123A9E);display:flex;align-items:center;justify-content:center;color:#fff;flex:0 0 auto}
@@ -523,13 +530,14 @@ function decor(v,seed){if(v.decor===false)return '';
  `<div class="sec" style="position:absolute;left:22px;top:${520+(h%160)}px">${[1,.6,.3].map(o=>`<i style="display:block;width:11px;height:11px;border-radius:50%;background:#1D5DF2;opacity:${o};margin-bottom:12px"></i>`).join('')}</div>`,
  `<svg class="sec" style="position:absolute;right:18px;top:${420+(h%200)}px" width="34" height="34" viewBox="0 0 34 34"><path d="M17 2 L20 13 L31 17 L20 21 L17 32 L14 21 L3 17 L14 13 Z" fill="#1D5DF2" opacity=".85"/></svg>`,
  `<svg class="sec" style="position:absolute;right:20px;top:${880+(h%140)}px" width="26" height="120" viewBox="0 0 26 120" fill="none"><path d="M13 4 C 22 24 4 44 13 64 C 22 84 4 104 13 116" stroke="#9DBDF9" stroke-width="4" stroke-linecap="round"/></svg>`,
- `<div class="sec" style="position:absolute;left:${640+(h%120)}px;top:24px;font-family:'Space Mono';font-size:20px;color:#9DBDF9;letter-spacing:14px">++</div>`];
+ `<div class="sec" style="position:absolute;left:${640+(h%120)}px;top:24px;font-family:'Space Mono';font-size:20px;color:#1D5DF2;letter-spacing:14px">++</div>`];
  const pick=[els[0],els[1+(h%2)*2],els[2+((h>>2)%2)],els[4]];
  return pick.filter((x,i,a)=>a.indexOf(x)===i).join('');}
 const shell=(inner,v,meta,num)=>`<div class="tp ${v.skin==='minimal'?'skin-min':v.skin==='classic'?'skin-classic':v.skin==='sticker'?'skin-sticker':''}">
  <span class="meta">${meta||'cmvng — daily brief'}</span><span class="num">${num||''}</span>${inner}${decor(v,num)}${chip(v)}</div>`;
-const parseList=(s,n)=>String(s||'').split(',').map(x=>x.trim()).filter(Boolean).slice(0,n);
+const parseList=(s,n)=>String(s||'').replace(/(\d),(?=\d{3}(\D|$))/g,'$1\u0001').split(',').map(x=>x.replace(/\u0001/g,',').trim()).filter(Boolean).slice(0,n);
 const parseKV=(s,n)=>parseList(s,n).map(x=>{const p=x.split(':');return{k:(p[0]||'').trim(),a:(p[1]||'').trim(),b:(p[2]||'').trim()}});
+const parseRow3=parseList; // parseList is now comma-safe at the root; parseRow3 kept as an alias so existing call sites keep working unchanged
 
 const T={};
 function def(id,name,cat,tags,slots,forms,render,sample){T[id]={id,name,cat,tags,slots,forms:forms||['none','cut','circ','oval','wm'],render,sample};}
@@ -1018,8 +1026,10 @@ def('mindshare','mindshare bars','infographics & data','mindshare attention bars
 def('leadboard','yapper leaderboard','compare & rank','leaderboard yapper rank points table top',
  [S_text('t','title','the yapper board'),S_text('a','accent','yapper'),
   S_text('rows','rows rank:name:pts ×5','1:@cmvng:4,210, 2:@fren_one:3,880, 3:@degen_max:3,140, 4:@onchain_ade:2,960, 5:@sol_sis:2,610'),{id:'faces',t:'images',label:'row pfps up to 5',max:5},S_skin,S_brand],['none'],
- v=>{const rs=parseList(v.rows,5).map(x=>{const p=x.split(':');return{r:p[0],n:p[1]||'',pt:p[2]||''}});let h='';
-  rs.forEach((r,i)=>{h+=`<div class="card" style="left:64px;top:${350+i*146}px;width:952px;height:122px;display:flex;align-items:center;gap:24px;padding:0 30px;${i===0?'background:linear-gradient(165deg,#2E6BFF,#123A9E);color:#fff':''}">
+ v=>{const rs=parseRow3(v.rows,5).map(x=>{const p=x.split(':');return{r:p[0],n:p[1]||'',pt:p[2]||''}});let h='';
+  const rowH=122,gap=24,stride=rowH+gap,n=rs.length,blockH=n*rowH+(n-1)*gap,bandStart=350,bandEnd=1150;
+  const startY=bandStart+Math.max(0,(bandEnd-bandStart-blockH)/2);
+  rs.forEach((r,i)=>{h+=`<div class="card" style="left:64px;top:${startY+i*stride}px;width:952px;height:${rowH}px;display:flex;align-items:center;gap:24px;padding:0 30px;${i===0?'background:linear-gradient(165deg,#2E6BFF,#123A9E);color:#fff':''}">
   <b style="width:56px;font-family:'Space Mono';font-weight:700;font-size:30px;${i===0?'':'color:#1D5DF2'}">${esc(r.r)}</b>
   <div style="width:70px;height:70px;border-radius:50%;overflow:hidden;border:3px solid ${i===0?'#fff':'#1D5DF2'}"><img src="${(v.faces||[])[i]||AV}" style="width:100%;height:100%;object-fit:cover;filter:hue-rotate(${(v.faces||[])[i]?0:i*70}deg)"></div>
   <span style="font-weight:800;font-size:30px">${esc(r.n)}</span>
@@ -1851,7 +1861,7 @@ def('lmtmymarket','my market flex','my world','limitless create market fees user
 def('lmtweekly','weekly board','my world','limitless leaderboard weekly monday rank',
  [S_text('rows','top rows rank:name:pts ×3','1:@degen_max:9,410, 2:@cmvng:8,880, 3:@fren_one:7,940'),
   S_text('me','my line','me: #2 · 480 pts to #1'),S_text('note','hand note','monday refresh, monday war'),S_skin,S_brand],['none'],
- v=>{const rs=parseList(v.rows,3).map(x=>{const p=x.split(':');return{r:p[0],n:p[1]||'',pt:p[2]||''}});
+ v=>{const rs=parseRow3(v.rows,3).map(x=>{const p=x.split(':');return{r:p[0],n:p[1]||'',pt:p[2]||''}});
   return shell(`${title('the weekly board','weekly',70)}
   <div style="position:absolute;right:64px;top:130px;background:#DCE9FB;color:#123A9E;font-family:'Space Mono';font-weight:700;font-size:19px;padding:11px 22px;border-radius:999px">resets monday</div>
   ${rs.map((r,i)=>`<div class="card" style="left:64px;top:${340+i*150}px;width:952px;height:126px;display:flex;align-items:center;gap:24px;padding:0 32px;${i===1?'outline:5px solid #1D5DF2;outline-offset:3px':''}">
@@ -1902,7 +1912,7 @@ def('wcstreak','streak multiplier','my world','wallchain streak multiplier consi
 def('wccampaigns','my campaigns board','my world','wallchain campaigns active rank pools list',
  [S_text('rows','rows project:pool:rank ×4','limitless:0.5% $LMTS:#12, heyelsa:0.6% supply:#31, idOS:1% supply:#58, velvet:626k $VELVET:#44'),
   S_text('note','hand note','four boards, one keyboard'),S_skin,S_brand],['none'],
- v=>{const rs=parseList(v.rows,4).map(x=>{const p=x.split(':');return{n:p[0]||'',pool:p[1]||'',rk:p[2]||''}});
+ v=>{const rs=parseRow3(v.rows,4).map(x=>{const p=x.split(':');return{n:p[0]||'',pool:p[1]||'',rk:p[2]||''}});
   return shell(`${title('active campaigns','active',70)}
   ${rs.map((r,i)=>`<div class="card" style="left:64px;top:${340+i*152}px;width:952px;height:128px;display:flex;align-items:center;gap:26px;padding:0 34px">
   <b style="font-weight:800;font-size:33px;width:280px">${esc(r.n)}</b>
@@ -1915,7 +1925,7 @@ def('elsaport','elsa portfolio snap','my world','heyelsa portfolio ai agent hold
  [S_text('total','total value','$4,812'),S_text('delta','delta chip','+6.4% this week'),
   S_text('rows','holdings asset:value:Δ ×3','ETH:$2,140:+4%, SOL:$1,480:+11%, USDC:$1,192:—'),
   S_text('agent','elsa says','elsa: rotate 10% into the L2 basket?'),S_skin,S_brand],F3,
- v=>{const rs=parseList(v.rows,3).map(x=>{const p=x.split(':');return{a:p[0]||'',v:p[1]||'',d:p[2]||''}});
+ v=>{const rs=parseRow3(v.rows,3).map(x=>{const p=x.split(':');return{a:p[0]||'',v:p[1]||'',d:p[2]||''}});
   return shell(`${title('portfolio check-in','portfolio',64)}
   <div style="position:absolute;left:64px;top:330px;display:flex;align-items:baseline;gap:24px"><b style="font-weight:800;font-size:130px;letter-spacing:-.04em;color:#123A9E;line-height:1">${esc(v.total)}</b>
   <span style="background:#DCE9FB;color:#123A9E;font-family:'Space Mono';font-weight:700;font-size:20px;padding:10px 20px;border-radius:999px">${esc(v.delta)}</span></div>
@@ -1950,7 +1960,7 @@ def('ngnrate','naira board','my world','naija naira usd rate p2p official lagos'
 def('naijap2p','p2p offers board','my world','p2p offers merchants rate limits naija',
  [S_text('rows','offers merchant:rate:limit ×3','swiftpay_ng:₦1,478:$50–$2k, lagosdesk:₦1,482:$100–$5k, mainlandotc:₦1,486:$500+'),
   S_text('note','hand note','always check completion rate first'),S_skin,S_brand],['none'],
- v=>{const rs=parseList(v.rows,3).map(x=>{const p=x.split(':');return{m:p[0]||'',r:p[1]||'',l:p[2]||''}});
+ v=>{const rs=parseRow3(v.rows,3).map(x=>{const p=x.split(':');return{m:p[0]||'',r:p[1]||'',l:p[2]||''}});
   return shell(`${title('p2p right now','p2p',76)}
   ${rs.map((r,i)=>`<div class="card" style="left:64px;top:${350+i*168}px;width:952px;height:140px;display:flex;align-items:center;gap:26px;padding:0 34px;${i===0?'outline:5px solid #1D5DF2;outline-offset:3px':''}">
   <i style="width:58px;height:58px;border-radius:50%;background:${i===0?'linear-gradient(160deg,#3D74FF,#123A9E)':'#DCE9FB'};color:${i===0?'#fff':'#123A9E'};font-style:normal;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px">${i===0?'★':i+1}</i>
@@ -2028,7 +2038,7 @@ def('memehold','we hold','my world','meme hold rope chop grip character convicti
 def('worldradar','attention radar','my world','attentionfi radar points cross project tracker',
  [S_text('rows','rows platform:points:next ×4','limitless:8,880 pts:board resets mon, wallchain:1,284 quacks:epoch ends thu, heyelsa:campaign live:snapshot fri, new hunt:scouting:—'),
   S_text('note','hand note','one dashboard for the whole grind'),S_skin,S_brand],['none'],
- v=>{const rs=parseList(v.rows,4).map(x=>{const p=x.split(':');return{n:p[0]||'',pt:p[1]||'',nx:p[2]||''}});
+ v=>{const rs=parseRow3(v.rows,4).map(x=>{const p=x.split(':');return{n:p[0]||'',pt:p[1]||'',nx:p[2]||''}});
   return shell(`${title('the attention radar','radar',66)}
   ${rs.map((r,i)=>`<div class="card" style="left:64px;top:${340+i*158}px;width:952px;height:132px;display:flex;align-items:center;gap:24px;padding:0 34px;${i===0?'background:linear-gradient(165deg,#2E6BFF,#123A9E);color:#fff':''}">
   <i style="width:16px;height:16px;border-radius:50%;background:${i===0?'#fff':'#1D5DF2'};font-style:normal;display:block"></i>
@@ -2355,9 +2365,10 @@ function openChars(swapEl){
  _charTarget=swapEl||null;
  let s=document.getElementById('bd_csheet');
  if(!s){s=document.createElement('div');s.id='bd_csheet';s.className='';
-  s.innerHTML='<div class="bsheet"><input id="bd_cq" placeholder="search characters"><div id="bd_cgrid"></div></div>';
+  s.innerHTML='<div class="bsheet"><div id="bd_gen"></div><input id="bd_cq" placeholder="search characters"><div id="bd_cgrid"></div></div>';
   document.getElementById('bscr').appendChild(s);
   s.onclick=e=>{if(e.target===s)s.classList.remove('on');};
+  drawGenPanel();
   const g=document.getElementById('bd_cgrid');
   const forms=[['card','me · card'],['cutout','me · cutout'],['circle','me · circle'],['oval','me · oval'],['faded','me · faded']];
   let h=Object.keys(CAST).map(k=>'<button data-cast="'+k+'" data-tag="'+k.replace(/-/g," ")+' cast mine generated"><img src="'+CAST[k].d+'" style="width:100%;height:52px;object-fit:contain"><i>'+k+'</i></button>').join('');
@@ -2365,6 +2376,50 @@ function openChars(swapEl){
   h+=forms.map(f=>'<button data-form="'+f[0]+'" data-tag="me cmvng photo"><img src="'+(f[0]==='circle'||f[0]==='oval'||f[0]==='faded'?AV:CHAR)+'" style="width:100%;height:44px;object-fit:contain"><i>'+f[1]+'</i></button>').join('');
   h+=Object.keys(CHARPACK).map(k=>'<button data-k="'+k+'" data-tag="'+k+' '+CHARPACK[k].t+'"><svg viewBox="0 0 100 120" style="width:100%;height:44px">'+CHARPACK[k].s+'</svg><i>'+k+'</i></button>').join('');
   g.innerHTML=h;
+  wireCharGridClicks(g,s);
+ } else { drawGenPanel(); }
+ document.getElementById('bd_cq').value='';
+ document.getElementById('bd_cgrid').querySelectorAll('button').forEach(b=>b.style.display='');
+ s.classList.add('on');
+}
+
+const GEN_STYLES=[['pixar','pixar 3d'],['meme','meme bold'],['pixel','pixel'],['anime','anime']];
+const GEN_POSES=[['locked-in','locked in'],['sent-it','sent it'],['cooked','cooked'],['shilling','shilling'],['relaxed','relaxed'],['still-holding','still holding']];
+let _genBusy=false;
+function drawGenPanel(){
+ const p=document.getElementById('bd_gen'); if(!p)return;
+ p.innerHTML='<div class="genrow">'
+  +'<select id="bd_genstyle">'+GEN_STYLES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('')+'</select>'
+  +'<select id="bd_genpose">'+GEN_POSES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('')+'</select>'
+  +'</div><button id="bd_genbtn" class="genbtn">generate a new character</button><div id="bd_genstat"></div>';
+ document.getElementById('bd_genbtn').onclick=doGenChar;
+}
+async function doGenChar(){
+ if(_genBusy)return; _genBusy=true;
+ const style=document.getElementById('bd_genstyle').value, pose=document.getElementById('bd_genpose').value;
+ const btn=document.getElementById('bd_genbtn'), stat=document.getElementById('bd_genstat');
+ const old=btn.textContent; btn.textContent='generating\u2026'; btn.disabled=true; stat.innerHTML='';
+ try{
+  const r=await fetch('/gen-char',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({style:style,pose:pose})});
+  const j=await r.json();
+  if(j.error==='no_key'){ stat.innerHTML='<div class="genmsg">'+esc(j.message||'add an image API key on Railway to turn this on.')+'</div>'; return; }
+  if(j.error){ stat.innerHTML='<div class="genmsg generr">could not generate: '+esc(j.message||j.error)+'</div>'; return; }
+  const img=new Image();
+  img.onload=()=>{
+   const key='gen-'+Date.now();
+   CAST[key]={ar:img.naturalHeight/Math.max(1,img.naturalWidth), d:j.image};
+   const tgt=_charTarget;
+   if(tgt){snapshot();tgt.type='cast';tgt.kind=key;delete tgt.form;renderEl(tgt);drawOverlay();}
+   else make('cast',{kind:key});
+   const s=document.getElementById('bd_csheet'); if(s)s.classList.remove('on');
+   _charTarget=null;
+  };
+  img.onerror=()=>{ stat.innerHTML='<div class="genmsg generr">generated, but the image failed to load.</div>'; };
+  img.src=j.image;
+ }catch(e){ stat.innerHTML='<div class="genmsg generr">generation failed. try again.</div>'; }
+ finally{ btn.textContent=old; btn.disabled=false; _genBusy=false; }
+}
+function wireCharGridClicks(g,s){
   g.querySelectorAll('button').forEach(b=>b.onclick=()=>{
     const tgt=_charTarget;
     if(b.dataset.cast){
@@ -2387,10 +2442,7 @@ function openChars(swapEl){
     _charTarget=null;
     s.classList.remove('on');});
   document.getElementById('bd_cq').oninput=e=>{const v=e.target.value.toLowerCase();
-    g.querySelectorAll('button').forEach(b=>b.style.display=(b.dataset.tag||'').includes(v)?'':'none');};}
- document.getElementById('bd_cq').value='';
- document.getElementById('bd_cgrid').querySelectorAll('button').forEach(b=>b.style.display='');
- s.classList.add('on');
+    g.querySelectorAll('button').forEach(b=>b.style.display=(b.dataset.tag||'').includes(v)?'':'none');};
 }
 function openDood(){
  let s=document.getElementById('bd_dsheet');
@@ -2434,7 +2486,7 @@ function innerHTML(el){
  if(el.type==='mascot'){const c=CHARPACK[el.kind]||CHARPACK.degen;
   return '<div class="el-doodle" style="width:'+el.w+'px;height:'+(el.w*1.2)+'px"><svg viewBox="0 0 100 120" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block">'+c.s+'</svg></div>';}
  if(el.type==='svgraw')return '<div class="el-doodle" style="width:'+el.w+'px;height:'+(el.w*(el.ar||1))+'px"><svg viewBox="'+el.vb+'" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block" fill="none">'+el.inner+'</svg></div>';
- if(el.type==='img')return '<div class="el-img" style="width:'+el.w+'px"><img src="'+el.src+'"></div>';
+ if(el.type==='img')return '<div class="el-img" style="width:'+el.w+'px;height:'+(el.w*(el.ar||1))+'px"><img src="'+el.src+'"></div>';
  if(el.type==='chip')return '<div class="el-chip" style="gap:'+(el.w*0.038)+'px"><div class="a" style="width:'+(el.w*0.229)+'px;height:'+(el.w*0.229)+'px"><img src="'+AV+'"></div><span style="font-size:'+(el.w*0.09)+'px">@cmvng</span></div>';
  return '';
 }
