@@ -3,7 +3,7 @@ BANGER WORKER — single-file version (no folder needed).
 Contains: the boss (gather), the writer (one AI call), and the web server.
 Serves the studio app at /app and the worker page at /.
 """
-import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket
+import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket, base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 EMBEDDED_VOICE = """You are ghost-writing AS @cmvng. Below is how he ACTUALLY writes, distilled from 1,348 of his real tweets, plus a bank of his real posts. Match the SHAPE, RHYTHM and RESTRAINT of those examples above any generic idea of a 'good crypto post'. He openly hates long-form explainer threads (his own words: "I get tired of reading long form contents on X... the original idea for X was short form").
@@ -254,6 +254,9 @@ MODEL     = os.environ.get('WRITER_MODEL', 'claude-haiku-4-5-20251001')
 MAX_TOK   = int(os.environ.get('WRITER_MAX_TOKENS', '2200'))
 SPEND_CAP = float(os.environ.get('MONTHLY_USD_CAP', '8'))
 SPEND_FILE = os.environ.get('SPEND_FILE', 'spend.json')
+EDITS_FILE = os.environ.get('EDITS_FILE', 'edits.json')
+EDITS_KEEP = 30   # how many raw corrections to retain on disk
+EDITS_INJECT = 8  # how many recent lessons actually go into the writer prompt
 
 # rough per-mtok prices for the guard (USD) — conservative
 PRICE = {'in': 1.0, 'out': 5.0}
@@ -454,6 +457,158 @@ def _spend_add(usd):
     except Exception: pass
     return s['usd']
 
+# ==================== EDIT LEARNING ====================
+"""
+"check my edit" - when he rewrites a draft himself, that correction is an instruction about
+his voice, not just a fixed typo. we distill WHAT changed and WHY into one short reusable
+line (one cheap API call), store it, and feed the last few lessons back into every future
+write_styled() call - so the writer actually gets better at sounding like him over time
+instead of making the same correction-worthy mistake forever.
+"""
+def _load_edits():
+    try:
+        j = json.load(open(EDITS_FILE))
+        return j if isinstance(j, list) else []
+    except Exception:
+        return []
+
+def _save_edits(lst):
+    try:
+        json.dump(lst[-EDITS_KEEP:], open(EDITS_FILE, 'w'))
+    except Exception:
+        pass
+
+def learn_edit(original, edited):
+    """distill one correction into a reusable lesson line, store it, return it."""
+    original = (original or '').strip()
+    edited = (edited or '').strip()
+    if not edited or edited == original:
+        return {'error': 'no_change', 'message': 'nothing to learn - the edit matches the original.'}
+
+    lesson = None
+    cost = 0.0
+    if API_KEY:
+        sys_prompt = (
+            "You study ONE correction a crypto writer (@cmvng) made to his own AI-assisted draft. "
+            "Output ONE short line (under 22 words, lowercase, no quotes) naming the SPECIFIC pattern he "
+            "corrected - not a generic 'improved clarity' summary. Focus on: what kind of phrase/structure/claim "
+            "he removed or changed, and what he replaced it with. This line will be shown to the writer before "
+            "future drafts as a standing instruction, so make it a rule, not a description. "
+            "Example good output: 'cut the corporate opener, he starts straight on his own number instead' "
+            "Example good output: 'he removed the invented time-of-day detail, keep timing vague unless given' "
+            "Output ONLY the line, nothing else."
+        )
+        user = "ORIGINAL (AI draft):\n%s\n\nHIS EDIT (what he actually posted):\n%s" % (original[:1200], edited[:1200])
+        try:
+            text, cost = _call_api(sys_prompt, [{'type': 'text', 'text': user}])
+            lesson = text.strip().strip('"').split('\n')[0][:200]
+        except Exception:
+            lesson = None
+    if not lesson:
+        # offline / no-key fallback: still capture something useful, just less distilled
+        lesson = ('edited draft (auto note, no api): shortened by %d chars' % (len(original) - len(edited))
+                  if len(edited) < len(original) else 'edited draft (auto note, no api) - see stored text')
+
+    rec = {'when': time.strftime('%Y-%m-%d %H:%M'), 'lesson': lesson,
+           'original': original[:600], 'edited': edited[:600]}
+    edits = _load_edits()
+    edits.append(rec)
+    _save_edits(edits)
+    if cost:
+        _spend_add(cost)
+    return {'ok': True, 'lesson': lesson, 'total_learned': len(edits)}
+
+def edit_learnings_block():
+    """the last few lessons, formatted for prompt injection. empty string if none yet."""
+    edits = _load_edits()
+    if not edits:
+        return ''
+    recent = edits[-EDITS_INJECT:]
+    lines = '\n'.join('- %s' % e['lesson'] for e in recent)
+    return ("\n\nLEARNED FROM HIS OWN EDITS (standing corrections he's made before - do not repeat these mistakes):\n"
+            + lines)
+
+# ==================== CHARACTER STUDIO ====================
+"""
+Generate a character image directly in the app - the same style presets + poses proven
+in this project. Needs GOOGLE_API_KEY or OPENAI_API_KEY on Railway. Without one, this
+returns a clear 'not configured' message and nothing else in the app is touched.
+No reference-image identity lock yet (fast-follow) - this generates fresh characters
+in the tested styles/poses, same as the Gamma-generated cast already in the builder.
+"""
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', '').strip()
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '').strip()
+
+CHAR_STYLES = {
+ "pixar": "rendered as a polished 3D Pixar/Disney-style animation still, soft global illumination, expressive character, subtle subsurface scattering, cinematic depth of field",
+ "meme": "bold high-contrast meme illustration, exaggerated expression, punchy saturated colors, comic energy, simple readable composition",
+ "pixel": "16-bit retro pixel art, limited palette, crisp dithering, arcade-game aesthetic, clean pixel grid",
+ "anime": "modern anime cel-shaded illustration, clean linework, dramatic lighting, vibrant saturated colors, dynamic composition",
+}
+CHAR_POSES = {
+ "locked-in": "hunched forward on a crate at 3am, elbows on knees, face lit from below by the phone in his hands, hood up",
+ "sent-it": "mid-jump with both feet off the ground, one fist punched toward the sky, head thrown back mid-shout, celebrating",
+ "cooked": "down on one knee on the floor, one fist braced on the ground, head hanging, shoulders collapsed, exhausted",
+ "shilling": "leaning toward the viewer, one arm thrust forward pointing directly out of the frame, wide grin, certain",
+ "relaxed": "leaning back against a wall with one foot up, phone in hand, chin lifted, completely relaxed",
+ "still-holding": "standing in a torn coat, one arm in a sling, feet planted, refusing to move, exhausted but defiant",
+}
+
+def _char_prompt(style_key, pose_key, extra=''):
+    style = CHAR_STYLES.get(style_key, CHAR_STYLES['pixar'])
+    pose = CHAR_POSES.get(pose_key, CHAR_POSES['locked-in'])
+    return ("A crypto trader character, %s. Full body, character centred, plain flat white background, "
+            "no scenery. Style: %s. Render at a standard resolution (about 1024px on the shortest side); "
+            "ignore any request for 4K, 8K, or ultra-high-resolution. no text, no letters, no watermark. %s"
+            % (pose, style, extra or '')).strip()
+
+def _gen_image_google(prompt):
+    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode()
+    req = urllib.request.Request(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+        data=body, headers={"content-type": "application/json", "x-goog-api-key": GOOGLE_API_KEY})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        j = json.loads(r.read().decode())
+    parts = (((j.get('candidates') or [{}])[0]).get('content') or {}).get('parts') or []
+    for p in parts:
+        if 'inlineData' in p:
+            return p['inlineData'].get('data', ''), p['inlineData'].get('mimeType', 'image/png')
+    raise Exception('no image in response')
+
+def _gen_image_openai(prompt):
+    body = json.dumps({"model": "gpt-image-1", "prompt": prompt, "n": 1, "size": "1024x1024"}).encode()
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/images/generations",
+        data=body, headers={"content-type": "application/json", "authorization": "Bearer " + OPENAI_API_KEY})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        j = json.loads(r.read().decode())
+    d = (j.get('data') or [{}])[0]
+    if d.get('b64_json'):
+        return d['b64_json'], 'image/png'
+    if d.get('url'):
+        img = fetch(d['url'], binary=True)
+        if img:
+            return base64.b64encode(img).decode(), 'image/png'
+    raise Exception('no image in response')
+
+def generate_character(style_key, pose_key, extra=''):
+    if not GOOGLE_API_KEY and not OPENAI_API_KEY:
+        return {'error': 'no_key', 'message': "add GOOGLE_API_KEY or OPENAI_API_KEY in Railway variables to turn this on."}
+    prompt = _char_prompt(style_key, pose_key, extra)
+    try:
+        if GOOGLE_API_KEY:
+            data_b64, mime = _gen_image_google(prompt)
+        else:
+            data_b64, mime = _gen_image_openai(prompt)
+        if not data_b64:
+            return {'error': 'api_fail', 'message': 'provider returned no image data.'}
+        return {'ok': True, 'image': 'data:%s;base64,%s' % (mime, data_b64), 'prompt': prompt}
+    except urllib.error.HTTPError as e:
+        return {'error': 'api_http', 'message': '%s: %s' % (e.code, e.read().decode()[:300])}
+    except Exception as e:
+        return {'error': 'api_fail', 'message': str(e)[:300]}
+
+
 
 def write(brief, angle, want=None, voice=None):
     """want = dict e.g. {'threads':2,'posts':4,'qts':4}. Returns drafts + usage."""
@@ -471,6 +626,10 @@ def write(brief, angle, want=None, voice=None):
     sys_prompt = (
         "You are the ghost-writer for a Lagos web3 creator (@cmvng). Write ONLY from the BRIEF given — "
         "do not invent facts or numbers. Match this VOICE exactly:\n" + voice +
+        "\n\n" + FOUNDATION +
+        "\n\n" + CRITICAL_FRAME +
+        edit_learnings_block() +
+        "\n\n" + HARD_FACT_RULE +
         "\n\nReturn STRICT JSON, no prose, no markdown fences, shape:\n"
         '{"threads":[{"draft":"...","template":"orbit10","image":"<asset filename or \'\'>"}],'
         '"posts":[{"draft":"...","template":"minimal","image":""}],'
@@ -483,35 +642,24 @@ def write(brief, angle, want=None, voice=None):
             "\n\nMAKE: %d threads, %d short posts, %d quote-tweet takes." %
             (want.get('threads', 2), want.get('posts', 4), want.get('qts', 4)))
 
-    body = json.dumps({
-        'model': MODEL, 'max_tokens': MAX_TOK,
-        'system': sys_prompt,
-        'messages': [{'role': 'user', 'content': user}],
-    }).encode()
-
-    req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body, headers={
-        'content-type': 'application/json',
-        'x-api-key': API_KEY,
-        'anthropic-version': '2023-06-01',
-    })
     try:
-        with urllib.request.urlopen(req, timeout=90) as r:
-            j = json.loads(r.read().decode())
+        text, real = _call_api(sys_prompt, [{'type': 'text', 'text': user}])
     except urllib.error.HTTPError as e:
         return {'error': 'api_http', 'message': '%s: %s' % (e.code, e.read().decode()[:300])}
     except Exception as e:
         return {'error': 'api_fail', 'message': str(e)[:300]}
-
-    usage = j.get('usage', {})
-    real = (usage.get('input_tokens', 600) * PRICE['in'] + usage.get('output_tokens', MAX_TOK) * PRICE['out']) / 1_000_000
     spent = _spend_add(real)
+    usage = {}  # _call_api doesn't expose raw usage separately; cost is already computed correctly from it
 
-    text = ''.join(b.get('text', '') for b in j.get('content', []) if b.get('type') == 'text')
-    text = text.strip().removeprefix('```json').removeprefix('```').removesuffix('```').strip()
     try:
         drafts = json.loads(text)
     except Exception:
         drafts = {'raw': text}
+    if 'raw' not in drafts:
+        srctext = json.dumps(brief, ensure_ascii=False) + ' ' + (angle or '')
+        for group in ('threads', 'posts', 'qts'):
+            for it in drafts.get(group, []) or []:
+                _verify(it, srctext, srctext)
     return {'drafts': drafts, 'usage': usage, 'run_cost_usd': round(real, 4), 'month_spent_usd': spent}
 
 
@@ -571,6 +719,15 @@ FOUNDATION = ("PROVEN ON 2,500 REAL TWEETS: there is NO format formula. what sep
  "5 genuine utility, 6 vivid spectacle. NEVER lean on the average-creator crutch (bullet-stuffing, "
  "ticker spam, colon-setups, rhetorical questions, forced 'everyone thinks X but actually'). those measurably do nothing.")
 
+CRITICAL_FRAME = ("BEFORE WRITING, silently answer: why does this project exist, what problem is it actually solving, "
+ "was that problem real, is it actually being solved or is this just marketing language. Don't just collect and list "
+ "features - have a point of view on whether the thing is genuinely interesting or just dressed-up PR. "
+ "You must be able to complete 'the point of this post is ___' in one clear sentence before writing a word. "
+ "If you can't state that thesis plainly, you don't have an angle yet - find one in the facts given, don't fake one. "
+ "Any bullets or listed facts in the draft must be EVIDENCE for that one thesis, never a flat feature dump - "
+ "bad: '>>> wallet >>> bridge >>> AI >>> token' (a list of things with no point). good: state the one real idea first, "
+ "then each fact demonstrates it. If the bullets could be reordered or deleted without changing the point, they fail.")
+
 import re as _slopre
 # HONEST slop detector — substance-level tells (the thin keyword list gave false 'clean').
 SLOP_TELLS = {
@@ -592,6 +749,12 @@ SLOP_TELLS = {
    r"that changes (everything|the game)", r"just took longer than anyone thought", r"here'?s the thing",
    r"make no mistake", r"the friction between", r"is (the thing|what) .{0,40}(were|was) supposed to (be|become)",
    r"live or die on", r"changes the game completely"],
+ "attention-bait": [r"what caught my attention", r"the bigger picture", r"worth paying attention to",
+   r"the bigger opportunity", r"this could be huge", r"what makes this particularly compelling"],
+ "interesting-family": [r"the interesting part", r"the most interesting thing", r"this is where things get interesting",
+   r"i think this is interesting", r"this isn'?t just", r"it'?s more than"],
+ "grandiose": [r"the real story", r"the future of", r"unlocking", r"redefining", r"at the intersection of",
+   r"a new era", r"paradigm shift", r"powering the future", r"seamlessly", r"in today'?s rapidly evolving"],
 }
 def _slopcheck(text):
     t=(text or "").lower(); hits=[]
@@ -699,6 +862,8 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
         "You are the ghost-writer for a Lagos web3 creator (@cmvng). Write ONLY from what you're given - "
         "do NOT invent facts, numbers, or projects not in the topic/brief. Match this VOICE exactly:\n" + voice +
         "\n\n" + FOUNDATION +
+        "\n\n" + CRITICAL_FRAME +
+        edit_learnings_block() +
         "\n\n" + CRITIQUE_RUBRIC +
         "\n\n" + HARD_FACT_RULE +
         "\n\nWrite %d DIFFERENT versions of the SAME topic, each through a different studied LENS below. "
@@ -714,6 +879,15 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
         '{"versions":[],"need":"<one short line naming the specific facts you need>"} and no other text. '
         'If at least one concrete fact was given, you MUST write using only it.'
         % (n, fmt, lens_txt, tpl, schema, tpl))
+    if brief and brief.get('x_pulse'):
+        chatter = brief['x_pulse'][:6]
+        if chatter:
+            sys_prompt += ("\n\nOTHERS ARE ALREADY POSTING ABOUT THIS - here's the real chatter already out there:\n" +
+                "\n".join("- %s" % (c.get('text', '')[:150]) for c in chatter) +
+                "\n\nFirst silently identify: what angle are they all taking, what are they repeating, what are they "
+                "missing. Then do NOT write the same angle. Either (a) go one layer deeper - a specific implication "
+                "they missed, (b) disagree with one specific reason, or (c) surface what they left out. If your draft "
+                "says nothing they haven't already said, it FAILS - change the angle or say less.")
     if images:
         sys_prompt += ("\n\nSCREENSHOTS ATTACHED: they are SOMEONE ELSE'S post/content. You are writing HIS reaction or remix - "
             "he did NOT live it, so NEVER write a first-person experience about it ('i spent', 'i watched', 'i realized', "
@@ -934,9 +1108,15 @@ def render_drafts(res):
         if not items: continue
         out.append('<h2>%s</h2>' % label)
         for it in items:
-            tag = '<div class="tagrow"><span class="tag">design: %s</span>%s</div>' % (
+            slop, inv, fab = it.get('slop', []), it.get('invented', []), it.get('fab', [])
+            flags = ''
+            if slop: flags += '<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; slop: %s</span>' % esc(', '.join(slop))
+            if inv: flags += '<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; not in source: %s</span>' % esc(', '.join(inv[:4]))
+            if fab: flags += '<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; fabricated: "%s"</span>' % esc('", "'.join(fab))
+            if not (slop or inv or fab): flags = '<span class="tag" style="background:#12331F;color:#7CE0A0">&#10003; clean</span>'
+            tag = '<div class="tagrow"><span class="tag">design: %s</span>%s%s</div>' % (
                 esc(it.get('template', '—')),
-                ('<span class="tag">image: %s</span>' % esc(it['image'])) if it.get('image') else '')
+                ('<span class="tag">image: %s</span>' % esc(it['image'])) if it.get('image') else '', flags)
             out.append('<div class="draft">%s%s</div>' % (esc(it.get('draft', '')), tag))
     return ''.join(out)
 
@@ -950,11 +1130,15 @@ def render_styled(res):
     out = ['<div class="card"><div class="ok">&#10003; %d versions of a %s &middot; run $%s &middot; month $%s</div></div>'
            % (len(vs), esc(res.get('type_label','')), esc(res.get('run_cost_usd','?')), esc(res.get('month_spent_usd','?')))]
     for v in vs:
-        slop = v.get('slop', [])
-        flag = ('<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; slop: %s</span>' % esc(', '.join(slop))) if slop else '<span class="tag" style="background:#12331F;color:#7CE0A0">&#10003; clean</span>'
+        slop, inv, fab = v.get('slop', []), v.get('invented', []), v.get('fab', [])
+        flags = ''
+        if slop: flags += '<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; slop: %s</span>' % esc(', '.join(slop))
+        if inv: flags += '<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; not in source: %s</span>' % esc(', '.join(inv[:4]))
+        if fab: flags += '<span class="tag" style="background:#3A1220;color:#FFB4C4">&#9888; fabricated: "%s"</span>' % esc('", "'.join(fab))
+        if not (slop or inv or fab): flags = '<span class="tag" style="background:#12331F;color:#7CE0A0">&#10003; clean</span>'
         tag = ('<div class="tagrow"><span class="tag">lens: %s</span><span class="tag">design: %s</span>%s%s</div>'
                % (esc(v.get('lens','?')), esc(v.get('template','—')),
-                  ('<span class="tag">image: %s</span>' % esc(v['image'])) if v.get('image') else '', flag))
+                  ('<span class="tag">image: %s</span>' % esc(v['image'])) if v.get('image') else '', flags))
         out.append('<div class="draft"><b style="color:#9FC0FF">%s</b>\n\n%s%s</div>' % (esc(v.get('lens','')), esc(v.get('draft','')), tag))
     return ''.join(out)
 
@@ -1009,7 +1193,7 @@ class H(BaseHTTPRequestHandler):
             res = write(brief, data.get('angle', ''),
                                want={'threads': int(data.get('th', 2)), 'posts': int(data.get('po', 4)), 'qts': int(data.get('qt', 4))},
                                voice=voice())
-            return self._send(200, json.dumps(res), 'application/json')
+            return self._send(200, render_drafts(res))
         if self.path == '/styled':
             try: brief = json.load(open(BRIEF_FILE))
             except Exception: brief = None
@@ -1029,6 +1213,12 @@ class H(BaseHTTPRequestHandler):
                                n=int(data.get('n', 3)),
                                brief=(brief if data.get('usebrief') else None), voice=voice(),
                                images=imgs)
+            return self._send(200, json.dumps(res), 'application/json')
+        if self.path == '/learn':
+            res = learn_edit(data.get('original', ''), data.get('edited', ''))
+            return self._send(200, json.dumps(res), 'application/json')
+        if self.path == '/gen-char':
+            res = generate_character(data.get('style', 'pixar'), data.get('pose', 'locked-in'), data.get('extra', ''))
             return self._send(200, json.dumps(res), 'application/json')
         return self._send(404, 'no route')
 
