@@ -23,7 +23,7 @@
       rd.readAsDataURL(f);
     });
   }
-  function drawThumbs(){ var t=$('bw_thumbs'); if(!t)return;
+  function drawThumbs(){ window.__bwShots=shots.slice(); var t=$('bw_thumbs'); if(!t)return;
     t.innerHTML=shots.map(function(s,i){return '<div class="bw-th"><img src="'+s+'"><button type="button" class="bw-thx" data-i="'+i+'">&times;</button></div>';}).join('');
   }
   const TYPE_OPTS=[['deepdive','deep-dive'],['alpha','alpha / call'],['update','update'],['airdrop','airdrop / how-to'],['educational','educational'],['banger','banger'],['viral','viral'],['article','article']];
@@ -139,12 +139,11 @@
         var seg=u.pathname.split('/').filter(Boolean)[0]||'';
         var pj=$('bw_proj').value.trim()||seg||u.hostname.replace('www.','').split('.')[0];
         var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0],session:BW_SESSION})});
-        var autoGather=await rr.json(); window.__bwBrief=autoGather.brief||{}; window.__bwHasBrief=true;
+        const gb=await rr.json(); window.__bwBrief=gb.brief||{}; window.__bwHasBrief=true;
       }catch(e){}
     }
     $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">'+(shots.length?'reading your screenshot(s), then rewriting through the loop…':'writing '+n+' version(s) through the loop, then designing…')+'</div></div>';
     try{
-      window.__bwShots=shots.slice();
       const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief,images:shots,session:BW_SESSION})});
       const res=await r.json(); renderVersions(res);
     }catch(e){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">write failed. try again.</div></div>'; }
@@ -279,7 +278,7 @@
 
   if (typeof T === 'undefined' || !window.__bapi) return;
 
-  const ENH_VERSION = '1.0.0';
+  const ENH_VERSION = '2.0.0';
   const TEMPLATE_DRAFT_PREFIX = 'banger.template.';
   const BUILDER_DRAFT_KEY = 'banger.builder.autosave.v2';
   let templateSaveTimer = 0;
@@ -287,6 +286,8 @@
   let selectedBuilderId = null;
   let suppressTemplateSave = false;
   let suppressBuilderSave = false;
+  let foundationSrc = '';
+  let foundationBuilderId = null;
 
   const escEnh = value => String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -405,6 +406,236 @@
       }
     `;
     document.head.appendChild(style);
+  }
+
+  function injectExperienceStyles() {
+    if (document.getElementById('bw_experience_style')) return;
+    const style = document.createElement('style');
+    style.id = 'bw_experience_style';
+    style.textContent = `
+      .bw-home-lab{position:relative;overflow:hidden;margin-top:14px;border-radius:22px;padding:20px;
+        color:#fff;background:linear-gradient(135deg,#09172E 0%,#123A9E 56%,#2E6BFF 100%);
+        box-shadow:0 24px 54px -22px rgba(12,27,51,.72);isolation:isolate}
+      .bw-home-lab:before{content:'';position:absolute;width:240px;height:240px;border-radius:50%;right:-110px;top:-130px;
+        background:rgba(255,255,255,.14);box-shadow:-120px 210px 0 rgba(132,255,207,.09);z-index:-1}
+      .bw-home-kicker,.bw-writer-kicker{display:flex;align-items:center;gap:7px;font:800 9.5px 'Space Mono',monospace;
+        letter-spacing:.12em;text-transform:uppercase}
+      .bw-home-kicker{color:#A9C3FF}.bw-home-kicker i,.bw-writer-kicker i{width:7px;height:7px;border-radius:50%;
+        background:#68F0B2;box-shadow:0 0 0 5px rgba(104,240,178,.12)}
+      .bw-home-lab h2{max-width:330px;margin:10px 0 7px;font:800 25px/1.06 'Sora',sans-serif;letter-spacing:-.035em}
+      .bw-home-lab h2 em{font:italic 400 28px 'Instrument Serif',serif;color:#B8D2FF}
+      .bw-home-lab p{max-width:315px;margin:0;color:rgba(255,255,255,.72);font:550 11.5px/1.55 'Sora',sans-serif}
+      .bw-home-proof{display:flex;gap:6px;flex-wrap:wrap;margin:13px 0 15px}
+      .bw-home-proof span{padding:6px 8px;border:1px solid rgba(255,255,255,.16);border-radius:999px;
+        background:rgba(255,255,255,.08);font:700 8.5px 'Space Mono',monospace;color:#D8E5FF;backdrop-filter:blur(5px)}
+      .bw-home-actions{display:flex;gap:8px}.bw-home-start,.bw-home-browse{border:0;border-radius:12px;padding:11px 13px;
+        font:800 11px 'Sora',sans-serif;cursor:pointer}
+      .bw-home-start{background:#fff;color:#123A9E;box-shadow:0 11px 22px -12px rgba(0,0,0,.55)}
+      .bw-home-browse{color:#fff;background:rgba(255,255,255,.11);border:1px solid rgba(255,255,255,.16)}
+      .bw-home-stack{position:absolute;right:12px;bottom:14px;width:118px;height:142px;pointer-events:none}
+      .bw-home-card{position:absolute;width:80px;aspect-ratio:4/5;border-radius:9px;overflow:hidden;border:2px solid rgba(255,255,255,.7);
+        background:#EDF3FC;box-shadow:0 14px 25px -10px rgba(0,0,0,.5);transform-origin:center}
+      .bw-home-card:nth-child(1){right:33px;top:19px;transform:rotate(-10deg)}
+      .bw-home-card:nth-child(2){right:8px;top:9px;transform:rotate(7deg)}
+      .bw-home-card:nth-child(3){right:21px;top:1px;transform:rotate(0)}
+      .bw-template-mini{position:absolute;left:0;top:0;width:1080px;height:1350px;transform-origin:0 0;pointer-events:none}
+      .bw-build-badge{position:absolute;right:14px;top:14px;border:1px solid rgba(255,255,255,.24);border-radius:999px;
+        padding:6px 9px;background:rgba(7,19,40,.36);font:800 8px 'Space Mono';color:#fff;backdrop-filter:blur(8px)}
+
+      .bw-writer-hero{position:relative;margin:-2px -2px 14px;padding:18px;border-radius:18px;overflow:hidden;
+        background:linear-gradient(140deg,#101C33,#123A9E 72%,#2E6BFF);color:#fff;box-shadow:0 20px 40px -24px rgba(12,27,51,.8)}
+      .bw-writer-hero:after{content:'';position:absolute;right:-45px;top:-55px;width:150px;height:150px;border-radius:50%;
+        border:28px solid rgba(255,255,255,.07)}
+      .bw-writer-kicker{color:#A9C3FF}.bw-writer-hero h2{margin:8px 0 6px;max-width:300px;font:800 22px/1.08 'Sora';letter-spacing:-.035em}
+      .bw-writer-hero h2 em{font:italic 400 25px 'Instrument Serif';color:#B8D2FF}
+      .bw-writer-hero p{margin:0;max-width:330px;color:rgba(255,255,255,.7);font:550 11px/1.5 'Sora'}
+      .bw-flow{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px}
+      .bw-flow-step{position:relative;padding:8px 7px;border-radius:10px;background:rgba(255,255,255,.08);
+        color:rgba(255,255,255,.58);font:700 8px 'Space Mono';text-transform:uppercase;letter-spacing:.06em}
+      .bw-flow-step b{display:flex;align-items:center;justify-content:center;width:18px;height:18px;margin-bottom:5px;border-radius:6px;
+        background:rgba(255,255,255,.12);font-size:9px;color:#fff}
+      .bw-flow-step.on{background:#fff;color:#123A9E}.bw-flow-step.on b{background:#E3ECFF;color:#123A9E}
+      .bw-flow-step.done{background:rgba(104,240,178,.13);color:#8FF6C6}.bw-flow-step.done b{background:#68F0B2;color:#0B4930}
+      #wscr .bw-card.bw-input-card{border-radius:20px;padding:12px;background:rgba(255,255,255,.72);backdrop-filter:blur(12px)}
+      #wscr .bw-input-card>.bw-lab{margin-top:10px}.bw-research-ready{margin:8px 0 12px;padding:12px;border-radius:14px;
+        border:1px solid #B9E6CB;background:linear-gradient(135deg,#F0FFF7,#E4F7EC);color:#17623B}
+      .bw-research-ready b{display:block;font:800 12px 'Sora';margin-bottom:3px}.bw-research-ready span{font:600 9.5px/1.45 'Space Mono'}
+      .bw-results-banner{display:flex;align-items:center;gap:10px;margin:13px 0 11px;padding:12px;border-radius:15px;
+        background:#101C33;color:#fff;box-shadow:0 14px 28px -20px rgba(12,27,51,.75)}
+      .bw-results-banner i{width:34px;height:34px;border-radius:11px;background:linear-gradient(145deg,#68F0B2,#18B27B);
+        color:#073C28;display:flex;align-items:center;justify-content:center;font:900 16px 'Sora';font-style:normal}
+      .bw-results-banner b{display:block;font:800 12px 'Sora'}.bw-results-banner small{display:block;margin-top:2px;color:#A9B9D6;font:600 9px 'Space Mono'}
+
+      .bw-design-fit{padding:0;border:0;background:transparent;margin-top:15px}
+      .bw-design-fit-head{margin-bottom:9px;padding-top:12px;border-top:1px solid #DFE8F6}
+      .bw-design-fit-head span{display:flex;align-items:center;gap:6px}.bw-design-fit-head span:before{content:'';width:7px;height:7px;border-radius:50%;background:#18B27B}
+      .bw-design-gallery{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 12px;scroll-snap-type:x mandatory;scrollbar-width:none}
+      .bw-design-gallery::-webkit-scrollbar{display:none}
+      .bw-design-card{position:relative;flex:0 0 min(64vw,235px);scroll-snap-align:start;border:2px solid transparent;border-radius:17px;
+        padding:7px;background:#F4F8FF;text-align:left;cursor:pointer;box-shadow:0 12px 26px -20px rgba(18,58,158,.65);transition:.18s ease}
+      .bw-design-card.on{border-color:#2E6BFF;background:#fff;box-shadow:0 17px 32px -18px rgba(18,58,158,.5);transform:translateY(-2px)}
+      .bw-design-visual{position:relative;width:100%;aspect-ratio:4/5;border-radius:12px;overflow:hidden;background:#EDF3FC}
+      .bw-design-score{position:absolute;right:7px;top:7px;z-index:3;padding:5px 7px;border-radius:999px;background:rgba(12,27,51,.84);
+        color:#fff;font:800 8px 'Space Mono';backdrop-filter:blur(5px)}
+      .bw-design-card.on .bw-design-score{background:#18B27B;color:#073C28}
+      .bw-design-meta{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;padding:9px 5px 5px;align-items:start}
+      .bw-design-meta b{font:800 12px/1.2 'Sora';color:#101C33;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .bw-design-meta span{grid-column:1/-1;font:600 8.5px/1.4 'Space Mono';color:#6C82AB}
+      .bw-design-check{width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#E3ECFF;
+        color:#123A9E;font:900 10px 'Sora'}.bw-design-card.on .bw-design-check{background:#2E6BFF;color:#fff}
+      .bw-selected-fit{display:flex;align-items:flex-start;gap:9px;margin:0 1px 10px;padding:10px;border-radius:12px;background:#EEF3FD}
+      .bw-selected-fit i{width:26px;height:26px;flex:0 0 auto;border-radius:9px;background:#E3ECFF;color:#123A9E;
+        display:flex;align-items:center;justify-content:center;font:900 12px 'Sora';font-style:normal}
+      .bw-selected-fit b{display:block;color:#20386A;font:800 10px 'Sora'}.bw-selected-fit span{display:block;margin-top:2px;color:#6C82AB;font:600 8.5px/1.4 'Space Mono'}
+      .bw-build-now{padding:13px 11px;box-shadow:0 13px 24px -13px rgba(18,58,158,.8)}
+      .bw-editor-intro{margin:0 0 12px;padding:12px 13px;border-radius:14px;color:#fff;
+        background:linear-gradient(135deg,#101C33,#123A9E);box-shadow:0 13px 28px -20px rgba(12,27,51,.75)}
+      .bw-editor-intro span{font:800 8.5px 'Space Mono';letter-spacing:.1em;text-transform:uppercase;color:#A9C3FF}
+      .bw-editor-intro b{display:block;margin:5px 0 2px;font:800 13px 'Sora'}.bw-editor-intro small{font:600 9px/1.4 'Space Mono';color:#C5D5F1}
+      .bw-builder-coach{position:absolute;left:50%;top:58px;z-index:75;width:min(310px,calc(100vw - 30px));transform:translateX(-50%);
+        padding:13px;border:1px solid rgba(255,255,255,.75);border-radius:16px;background:rgba(16,28,51,.94);color:#fff;
+        box-shadow:0 20px 44px -15px rgba(12,27,51,.75);backdrop-filter:blur(12px)}
+      .bw-builder-coach b{display:block;font:800 12px 'Sora'}.bw-builder-coach p{margin:4px 0 10px;color:#B8C8E3;font:600 9px/1.5 'Space Mono'}
+      .bw-builder-coach button{width:100%;border:0;border-radius:10px;padding:9px;background:#fff;color:#123A9E;font:800 10px 'Sora'}
+      #bscr .top{background:rgba(237,243,252,.88);backdrop-filter:blur(10px);position:relative;z-index:20}
+      #bscr .rail{background:linear-gradient(180deg,rgba(237,243,252,.45),#EDF3FC 45%)}
+      #bscr .add:hover{transform:translateY(-2px);box-shadow:0 14px 25px -14px rgba(18,58,158,.5)}
+      @media(min-width:700px){
+        .bw-home-lab{padding:26px 28px}.bw-home-lab h2{font-size:31px;max-width:430px}.bw-home-lab h2 em{font-size:34px}
+        .bw-home-lab p{font-size:12.5px;max-width:430px}.bw-home-stack{right:30px;bottom:19px;transform:scale(1.2)}
+        .bw-design-card{flex-basis:220px}.bw-writer-hero{padding:22px}.bw-writer-hero h2{font-size:27px;max-width:420px}
+      }
+      @media(max-width:430px){
+        .bw-home-lab{padding:18px 15px 16px}.bw-home-lab h2{font-size:22px;max-width:245px}.bw-home-lab h2 em{font-size:25px}
+        .bw-home-lab p{max-width:245px;font-size:10.5px}.bw-home-stack{right:-9px;bottom:12px;transform:scale(.8)}
+        .bw-home-proof{max-width:260px}.bw-home-actions{max-width:260px}.bw-home-start,.bw-home-browse{padding:10px 11px;font-size:10px}
+        .bw-flow-step{font-size:7.5px}.bw-design-card{flex-basis:66vw}.bw-build-actions{grid-template-columns:1fr 1fr}
+        #bscr .top .bdword{display:none}#bscr .top{gap:5px;padding-left:8px;padding-right:8px}
+        #bscr .top .ghost,#bscr .top .exp{padding:8px 9px;font-size:10px}
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function hydrateTemplatePreview(host, templateId, customValues) {
+    if (!host || !T[templateId]) return;
+    const values = customValues || Object.assign({}, clone(T[templateId].sample || {}), {branding:true});
+    host.innerHTML = T[templateId].render(values);
+    host.style.width = '1080px';
+    host.style.height = '1350px';
+    host.style.transformOrigin = '0 0';
+    host.style.pointerEvents = 'none';
+    const resize = () => {
+      const shell = host.parentElement;
+      const width = shell && shell.clientWidth;
+      if (width) host.style.transform = 'scale(' + (width / 1080) + ')';
+    };
+    resize();
+    requestAnimationFrame(() => {
+      try { fitPass(host); } catch (_) {}
+      resize();
+    });
+    if (window.ResizeObserver && !host.__bwResize) {
+      host.__bwResize = new ResizeObserver(resize);
+      host.__bwResize.observe(host.parentElement);
+    }
+  }
+
+  function installHomeLaunchpad() {
+    const home = document.getElementById('home');
+    if (!home || document.getElementById('bw_home_lab')) return;
+    const counter = home.querySelector('.counter');
+    if (!counter) return;
+    const lab = document.createElement('section');
+    lab.id = 'bw_home_lab';
+    lab.className = 'bw-home-lab';
+    lab.innerHTML = '<div class="bw-build-badge">smart studio · v2</div>' +
+      '<div class="bw-home-kicker"><i></i> research-powered creator</div>' +
+      '<h2>turn any project into a <em>finished visual story.</em></h2>' +
+      '<p>Pull the facts, write in your voice, preview the best-fit directions, then edit every important layer.</p>' +
+      '<div class="bw-home-proof"><span>live research</span><span>121 original designs</span><span>editable builder</span></div>' +
+      '<div class="bw-home-actions"><button type="button" class="bw-home-start">start smart project →</button>' +
+      '<button type="button" class="bw-home-browse">browse templates</button></div>' +
+      '<div class="bw-home-stack"><div class="bw-home-card"><div class="bw-template-mini" data-home-template="bignum"></div></div>' +
+      '<div class="bw-home-card"><div class="bw-template-mini" data-home-template="top5"></div></div>' +
+      '<div class="bw-home-card"><div class="bw-template-mini" data-home-template="threadcover"></div></div></div>';
+    counter.insertAdjacentElement('afterend', lab);
+    lab.querySelector('.bw-home-start').onclick = () => {
+      goWriter();
+      setTimeout(() => {
+        decorateWriterWorkspace();
+        const input = document.getElementById('bw_proj');
+        if (input) input.focus();
+      }, 80);
+    };
+    lab.querySelector('.bw-home-browse').onclick = () => {
+      const search = home.querySelector('.search');
+      if (search) search.scrollIntoView({behavior:'smooth', block:'start'});
+      const input = document.getElementById('q');
+      if (input) setTimeout(() => input.focus(), 350);
+    };
+    lab.querySelectorAll('[data-home-template]').forEach(host => {
+      const id = host.dataset.homeTemplate;
+      const fallback = Object.keys(T)[0];
+      hydrateTemplatePreview(host, T[id] ? id : fallback);
+    });
+  }
+
+  function setWriterFlow(stage) {
+    document.querySelectorAll('.bw-flow-step').forEach((node, index) => {
+      node.classList.toggle('done', index < stage);
+      node.classList.toggle('on', index === stage);
+    });
+  }
+
+  function decorateWriterWorkspace() {
+    const wrap = document.querySelector('#wscr .bw-wrap');
+    if (!wrap || wrap.dataset.experience === ENH_VERSION) return false;
+    wrap.dataset.experience = ENH_VERSION;
+    const firstCard = wrap.querySelector(':scope > .bw-card');
+    if (firstCard) firstCard.classList.add('bw-input-card');
+    const hero = document.createElement('section');
+    hero.className = 'bw-writer-hero';
+    hero.innerHTML = '<div class="bw-writer-kicker"><i></i> project intelligence lab</div>' +
+      '<h2>research it. write it. <em>see the design.</em></h2>' +
+      '<p>One guided flow from a project link or screenshot to a complete visual you can keep editing.</p>' +
+      '<div class="bw-flow"><div class="bw-flow-step on"><b>1</b>research</div>' +
+      '<div class="bw-flow-step"><b>2</b>write</div><div class="bw-flow-step"><b>3</b>design</div></div>';
+    if (firstCard) firstCard.prepend(hero); else wrap.prepend(hero);
+    const projectLabel = Array.from(wrap.querySelectorAll('.bw-lab')).find(node => /pull real facts/i.test(node.textContent));
+    if (projectLabel) projectLabel.textContent = '01 · project and source';
+    const topicLabel = Array.from(wrap.querySelectorAll('.bw-lab')).find(node => /what.s it about/i.test(node.textContent));
+    if (topicLabel) topicLabel.textContent = '02 · story angle or raw material';
+    const gather = document.getElementById('bw_gather');
+    if (gather) gather.textContent = 'research project →';
+    const compose = document.getElementById('bw_go');
+    if (compose) compose.textContent = 'write + show visual directions →';
+    return true;
+  }
+
+  function decorateResearchResult() {
+    const facts = document.getElementById('bw_facts');
+    if (!facts || !window.__bwHasBrief || facts.querySelector('.bw-research-ready')) return;
+    const note = document.createElement('div');
+    note.className = 'bw-research-ready';
+    const count = Object.keys((window.__bwBrief || {}).live_numbers || {}).length;
+    note.innerHTML = '<b>research brief ready ✓</b><span>' + (count || 'source') +
+      ' verified signal' + (count === 1 ? '' : 's') + ' will guide the writing and template match.</span>';
+    facts.prepend(note);
+    setWriterFlow(1);
+  }
+
+  function installExperienceObserver() {
+    const observer = new MutationObserver(() => {
+      installHomeLaunchpad();
+      decorateWriterWorkspace();
+      decorateResearchResult();
+    });
+    observer.observe(document.body, {childList:true, subtree:true});
+    document.addEventListener('click', event => {
+      if (event.target.closest && event.target.closest('#bw_gather')) setWriterFlow(0);
+      if (event.target.closest && event.target.closest('#bw_go')) setWriterFlow(1);
+    });
   }
 
   /* ---------- Reliable template controls ---------- */
@@ -604,6 +835,13 @@
   function enhanceTemplatePanel() {
     const panel = document.getElementById('panel');
     if (!panel || !cur || !T[cur]) return;
+    if (!panel.querySelector('.bw-editor-intro')) {
+      const intro = document.createElement('div');
+      intro.className = 'bw-editor-intro';
+      intro.innerHTML = '<span>live template editor</span><b>original design · smarter controls</b>' +
+        '<small>Change the content here, or send the finished design to Builder for layer-by-layer editing.</small>';
+      panel.prepend(intro);
+    }
     if (!panel.querySelector('.bw-panel-actions')) {
       const actions = document.createElement('div');
       actions.className = 'bw-panel-actions';
@@ -738,6 +976,45 @@
       ['quote','minimal','threadcover'].forEach((id, index) => { if (T[id]) scores[id] = 8 - index; });
     }
     return Object.keys(scores).sort((a, b) => scores[b] - scores[a]).slice(0, 4);
+  }
+
+  function templateMatchReason(version, id, index) {
+    const context = draftContext(version);
+    const template = T[id] || {};
+    const label = (id + ' ' + (template.name || '') + ' ' + (template.tags || '')).toLowerCase();
+    if (/top\s*\d+|rank|leaderboard|podium/i.test(context) || /top|rank|leader|podium/.test(label)) {
+      return 'turns the ranking into a clear visual hierarchy';
+    }
+    if (/\b(vs\.?|versus|compare|against|difference)\b/i.test(context) || /versus|compare|this or that/.test(label)) {
+      return 'makes the comparison instantly scannable';
+    }
+    if (/\b(how to|steps?|guide|checklist|tutorial)\b/i.test(context) || /steps|checklist|guide/.test(label)) {
+      return 'maps the story into a simple sequence';
+    }
+    if (/\b(timeline|history|roadmap|unlock|vesting|deadline|launch date)\b/i.test(context) || /timeline|countdown|vesting/.test(label)) {
+      return 'shows the timing and sequence at a glance';
+    }
+    if (/[$#]?\d[\d,.]*\s*(?:%|x|m|b|k|million|billion)?|\b(volume|tvl|users|revenue|stat|data)\b/i.test(context) || /number|stat|data|tile|bar/.test(label)) {
+      return 'makes the strongest verified number the hero';
+    }
+    if (/\b(news|breaking|announce|launch|update|release|shipped)\b/i.test(context) || /news|announce|launch|update/.test(label)) {
+      return 'gives the update a sharp editorial feel';
+    }
+    if (hasImagesAvailable() && (template.slots || []).some(slot => slot.t === 'images')) {
+      return 'uses your screenshots as visible proof';
+    }
+    if (/\b(thread|deep dive|research|explainer|breakdown)\b/i.test(context) || /thread|cover|explainer/.test(label)) {
+      return 'frames the research as a strong visual story';
+    }
+    return index === 0 ? 'strongest editorial fit for this angle' : 'a distinct alternative direction for the same story';
+  }
+
+  function designRecommendations(version) {
+    return designChoices(version).map((id, index) => ({
+      id,
+      score: Math.max(78, 96 - index * 6),
+      reason: templateMatchReason(version, id, index)
+    }));
   }
 
   function projectLogoKey() {
@@ -879,31 +1156,60 @@
   function enhanceDraftCards() {
     const out = document.getElementById('bw_out');
     if (!out) return;
-    out.querySelectorAll('.bw-copy[data-id]').forEach(copyButton => {
+    const resultButtons = out.querySelectorAll('.bw-copy[data-id]');
+    if (resultButtons.length && !out.querySelector('.bw-results-banner')) {
+      const firstResult = resultButtons[0].closest('.bw-card');
+      const banner = document.createElement('div');
+      banner.className = 'bw-results-banner';
+      banner.innerHTML = '<i>✓</i><div><b>writing complete · choose the visual direction</b>' +
+        '<small>real previews filled with your content — not generic template names</small></div>';
+      if (firstResult) firstResult.insertAdjacentElement('beforebegin', banner); else out.prepend(banner);
+    }
+    if (resultButtons.length) setWriterFlow(2);
+    resultButtons.forEach(copyButton => {
       const id = copyButton.getAttribute('data-id');
       const version = (window.__bwStore || {})[id];
       const card = copyButton.closest('.bw-card');
       if (!version || !card || card.dataset.designEnhanced) return;
       card.dataset.designEnhanced = '1';
-      const choices = designChoices(version);
+      const recommendations = designRecommendations(version);
+      const choices = recommendations.map(item => item.id);
       version.__chosenTemplate = choices[0];
       const fit = document.createElement('div');
       fit.className = 'bw-design-fit';
-      fit.innerHTML = '<div class="bw-design-fit-head"><span>design intelligence</span><b>best fit · ' +
+      fit.innerHTML = '<div class="bw-design-fit-head"><span>visual directions · matched to this story</span><b>best fit · ' +
         escEnh((T[choices[0]] || {}).name || choices[0]) + '</b></div>' +
-        '<div class="bw-design-choices">' + choices.map((templateId, index) =>
-          '<button type="button" class="bw-design-choice ' + (index === 0 ? 'on' : '') +
-          '" data-template="' + escEnh(templateId) + '">' + escEnh(T[templateId].name) + '</button>').join('') + '</div>' +
+        '<div class="bw-design-gallery">' + recommendations.map((item, index) =>
+          '<button type="button" class="bw-design-card ' + (index === 0 ? 'on' : '') + '" data-template="' + escEnh(item.id) + '">' +
+            '<div class="bw-design-visual"><div class="bw-template-mini" data-preview-template="' + escEnh(item.id) + '"></div>' +
+              '<span class="bw-design-score">' + item.score + '% fit</span></div>' +
+            '<div class="bw-design-meta"><b>' + escEnh(T[item.id].name) + '</b><i class="bw-design-check">' + (index === 0 ? '✓' : '→') + '</i>' +
+              '<span>' + escEnh(item.reason) + '</span></div></button>').join('') + '</div>' +
+        '<div class="bw-selected-fit"><i>✦</i><div><b>why this one</b><span>' + escEnh(recommendations[0].reason) +
+          '. It is already populated from the research and draft above.</span></div></div>' +
         '<div class="bw-build-actions"><button type="button" class="bw-build-now">build editable design →</button>' +
         '<button type="button" class="bw-edit-first">edit template first</button></div>';
       const tags = card.querySelector('.bw-tags');
       if (tags) tags.insertAdjacentElement('beforebegin', fit); else card.appendChild(fit);
-      fit.querySelectorAll('.bw-design-choice').forEach(button => {
+      fit.querySelectorAll('[data-preview-template]').forEach(host => {
+        hydrateTemplatePreview(host, host.dataset.previewTemplate, smartTemplateValues(host.dataset.previewTemplate, version));
+      });
+      fit.querySelectorAll('.bw-design-card').forEach(button => {
         button.onclick = () => {
           version.__chosenTemplate = button.dataset.template;
-          fit.querySelectorAll('.bw-design-choice').forEach(x => x.classList.toggle('on', x === button));
+          fit.querySelectorAll('.bw-design-card').forEach(x => {
+            const selected = x === button;
+            x.classList.toggle('on', selected);
+            const check = x.querySelector('.bw-design-check');
+            if (check) check.textContent = selected ? '✓' : '→';
+          });
           const best = fit.querySelector('.bw-design-fit-head b');
           if (best) best.textContent = 'selected · ' + T[button.dataset.template].name;
+          const match = recommendations.find(item => item.id === button.dataset.template);
+          const selectedReason = fit.querySelector('.bw-selected-fit span');
+          if (selectedReason && match) selectedReason.textContent = match.reason + '. It is already populated from the research and draft above.';
+          const build = fit.querySelector('.bw-build-now');
+          if (build) build.textContent = 'build ' + T[button.dataset.template].name.toLowerCase() + ' →';
         };
       });
       fit.querySelector('.bw-build-now').onclick = () => window.__bwBuildDesign(id, version.__chosenTemplate);
@@ -984,14 +1290,19 @@
     if (background) {
       const data = window.__bapi.serialize();
       const format = window.__bapi.fmt()[0];
+      foundationSrc = background;
+      const foundation = {type:'img',src:background,x:0,y:0,w:frame.W,ar:frame.H / frame.W};
       suppressBuilderSave = true;
-      window.__bapi.importEls(data, format, 'url("' + background + '") center / 100% 100% no-repeat');
+      window.__bapi.importEls([foundation].concat(data), format, 'transparent');
       suppressBuilderSave = false;
+      const imported = window.__bapi.list();
+      foundationBuilderId = imported[0] ? imported[0].id : null;
     }
     installBuilderEnhancements();
     scheduleBuilderSave();
-    toast('design ready · ' + count + ' editable layers · structure preserved', 'ok');
-    return count;
+    const total = count + (background ? 1 : 0);
+    toast('design ready · ' + total + ' editable layers · full foundation included', 'ok');
+    return total;
   };
 
   /* ---------- Builder inspector, layers, shapes, and autosave ---------- */
@@ -1017,6 +1328,8 @@
     window.__bapi.importEls(clean, format || window.__bapi.fmt()[0], background || '');
     suppressBuilderSave = false;
     const nextList = window.__bapi.list();
+    const foundationIndex = clean.findIndex(item => foundationSrc && item.src === foundationSrc);
+    foundationBuilderId = foundationIndex >= 0 && nextList[foundationIndex] ? nextList[foundationIndex].id : null;
     if (typeof selectedIndex === 'number' && nextList[selectedIndex]) {
       selectedBuilderId = nextList[selectedIndex].id;
       window.__bapi.select(selectedBuilderId);
@@ -1044,6 +1357,7 @@
   }
 
   function describeLayer(item, index) {
+    if ((foundationBuilderId && item.__id === foundationBuilderId) || (foundationSrc && item.src === foundationSrc)) return 'design foundation';
     if (item.type === 'text') return (item.text || 'text').replace(/\s+/g, ' ').slice(0, 34);
     if (item.type === 'logo') return (item.key || 'coin') + ' logo';
     if (item.type === 'char' || item.type === 'cast' || item.type === 'peep' || item.type === 'mascot') return 'character';
@@ -1249,6 +1563,9 @@
       toast('no builder autosave found yet', 'warn');
       return;
     }
+    const fullCanvas = saved.data.find(item => (item.type === 'img' || item.type === 'shot') &&
+      /^data:image\//.test(item.src || '') && +(item.x || 0) === 0 && +(item.y || 0) === 0 && +(item.w || 0) >= 800);
+    foundationSrc = fullCanvas ? fullCanvas.src : '';
     importBuilderState(saved.data, saved.format || 'post', saved.background || '', null);
     renderBuilderSheet();
     toast('builder autosave restored', 'ok');
@@ -1312,6 +1629,18 @@
         }, selectedIndex(builderState()) + 1);
       }
     });
+    if (!sessionStorage.getItem('banger.builder.coach.v2') && !screen.querySelector('.bw-builder-coach')) {
+      const coach = document.createElement('div');
+      coach.className = 'bw-builder-coach';
+      coach.innerHTML = '<b>your full design is editable here</b><p>Tap text, images, logos, or the design foundation. Use Layers to reorder, duplicate, style, or delete anything.</p>' +
+        '<button type="button">show me the layers →</button>';
+      coach.querySelector('button').onclick = () => {
+        sessionStorage.setItem('banger.builder.coach.v2', '1');
+        coach.remove();
+        openBuilderSheet();
+      };
+      screen.appendChild(coach);
+    }
   }
 
   const nativeGoBuilder = window.goBuilder;
@@ -1321,6 +1650,10 @@
   };
 
   injectEnhancementStyles();
+  injectExperienceStyles();
+  installHomeLaunchpad();
+  decorateWriterWorkspace();
+  installExperienceObserver();
   installBuilderEnhancements();
 })();
 
