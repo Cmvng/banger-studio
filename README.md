@@ -1,58 +1,52 @@
-# Banger Studio — app + worker
+# Banger Studio
 
-Two things live here, at one web address once deployed:
+Banger Studio turns an idea, project URL, or screenshot into three source-aware social concepts, each pairing a draft in the CMVNG voice with a matching 4:5 design direction.
 
-- **the studio app** — your 122 design templates (offline, free forever) — opens at `/app`
-- **the worker** — the boss (gathers everything free) + the writer (one cheap AI call) — opens at `/`
+## Product flow
 
----
+1. Add facts, notes, a project URL, or a screenshot.
+2. Optionally research the linked project before writing.
+3. Generate three distinct editorial angles in one API call.
+4. Review fact/slop checks, edit the draft, and choose a visual family.
+5. Continue in the builder, save the project locally, or export a 1080 x 1350 PNG.
 
-## What each piece costs
+## Routes
 
-| Piece | Runs on | Cost |
-|---|---|---|
-| Studio app | your phone, offline | $0 |
-| The boss (gathering) | Railway | $0 (no AI) |
-| The writer (drafts) | Railway + your API key | cents per press of WRITE |
+- /app - the production Studio experience
+- /legacy - the preserved original template studio
+- / - the low-level worker interface
+- /health - Railway health check
 
-The API **only** fires when you press **WRITE**. Nothing runs on a timer. The boss does all the
-gathering for free; the writer reads only the tiny brief, so each run is cheap.
+## Run
 
----
+The application uses Python's standard-library HTTP server:
 
-## Deploy (once)
+    python app.py
 
-You already have this repo connected to Railway. To ship:
+Open http://localhost:8080/app.
 
-1. Put these files in the repo `Cmvng/banger-studio` (replace the old `banger-studio-app.html`
-   with the new one; add the `worker/` folder, `Procfile`, `requirements.txt`, `runtime.txt`).
-2. In **Railway → your project → Variables**, add:
-   - `ANTHROPIC_API_KEY` = your key (starts `sk-ant-...`)  ← the writer needs this
-   - `PROXY_URL` = your Webshare proxy string (optional, widens X + search)
-   - `MONTHLY_USD_CAP` = `8`  (safety brake — the writer stops if the month's spend passes this)
-   - `WRITER_MODEL` = `claude-haiku-4-5-20251001`  (cheapest; change later if you want)
-3. Railway redeploys automatically. Open the URL:
-   - `/`     → the worker (paste a link, gather, write)
-   - `/app`  → the studio
+## Environment
 
-That's it. No install steps — the boss and server use only Python's standard library.
+- ANTHROPIC_API_KEY - required for generation
+- STUDIO_ACCESS_KEY - optional private key required by every POST endpoint
+- MONTHLY_USD_CAP - monthly AI spend ceiling; defaults to 8
+- RATE_LIMIT_PER_MINUTE - POST requests allowed per client per minute; defaults to 30
+- MAX_BODY_BYTES - maximum JSON body size; defaults to 8 MB
+- PORT - server port; defaults to 8080
+- PROXY_URL - optional proxy for public-source gathering
 
----
+## Safety and reliability
 
-## Daily use
+- Research fetches accept only public HTTP(S) destinations and reject private, loopback, link-local, reserved, and metadata addresses.
+- Research briefs are isolated by browser session instead of sharing one global file.
+- POST routes support access-key protection, rate limits, and request-size limits.
+- HTML responses ship with a CSP and standard security headers.
+- Large text responses are gzip-compressed.
+- The application shell is installable and caches only safe GET assets.
+- Projects, brand settings, and builder state autosave locally.
 
-1. Open the worker URL on your phone.
-2. Type a project + its site link. Press **GATHER** → read the dossier (free).
-3. Type your **angle** for the week. Press **WRITE** → drafts appear, each tagged with which
-   template + which gathered image to use.
-4. Copy a draft, open `/app`, build the design, export.
+## Tests
 
-## Steering the voice
+    python -m unittest discover -s tests -v
 
-Edit `worker/voice.txt` any time — that's how the writer learns to sound like you.
-
-## Safety
-
-- `MONTHLY_USD_CAP` hard-stops the writer if spend passes your limit.
-- The API key lives only in Railway's private variables — never in the code, never shared.
-- The boss reads X through public mirrors + the project's own feed — no login, your accounts stay clean.
+The test suite covers the SSRF guard, session sanitization, health/security headers, access-key protection, compressed app delivery, duplicate IDs, image alternatives, and button naming.

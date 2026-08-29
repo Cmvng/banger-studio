@@ -3,8 +3,9 @@ BANGER WORKER — single-file version (no folder needed).
 Contains: the boss (gather), the writer (one AI call), and the web server.
 Serves the studio app at /app and the worker page at /.
 """
-import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket, base64
+import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket, base64, gzip, hmac, ipaddress, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
 
 EMBEDDED_VOICE = """You are ghost-writing AS @cmvng. Below is how he ACTUALLY writes, distilled from 1,348 of his real tweets, plus a bank of his real posts. Match the SHAPE, RHYTHM and RESTRAINT of those examples above any generic idea of a 'good crypto post'. He openly hates long-form explainer threads (his own words: "I get tired of reading long form contents on X... the original idea for X was short form").
 
@@ -66,7 +67,7 @@ Output: one dossier dict — the ONLY thing the writer ever reads.
 """
 import urllib.request, json, re, ssl, hashlib, os, time
 
-CTX = ssl.create_default_context(); CTX.check_hostname = False; CTX.verify_mode = ssl.CERT_NONE
+CTX = ssl.create_default_context()
 UA = {'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'}
 PROXY = os.environ.get('PROXY_URL', '').strip()
 
@@ -76,13 +77,32 @@ def _opener():
         handlers.append(urllib.request.ProxyHandler({'http': PROXY, 'https': PROXY}))
     return urllib.request.build_opener(*handlers)
 
+def _safe_public_url(url):
+    """Only allow public http(s) targets; blocks localhost, metadata, and private networks."""
+    try:
+        parsed = urlparse(str(url or '').strip())
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            return False
+        host = parsed.hostname.rstrip('.').lower()
+        if host in ('localhost', 'localhost.localdomain') or host.endswith(('.local', '.internal')):
+            return False
+        for info in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == 'https' else 80), type=socket.SOCK_STREAM):
+            addr = ipaddress.ip_address(info[4][0])
+            if any((addr.is_private, addr.is_loopback, addr.is_link_local, addr.is_multicast, addr.is_reserved, addr.is_unspecified)):
+                return False
+        return True
+    except Exception:
+        return False
+
 def fetch(url, binary=False, timeout=10):
+    if not _safe_public_url(url):
+        return None
     try:
         req = urllib.request.Request(url, headers=UA)
-        import socket
-        socket.setdefaulttimeout(timeout)
         with _opener().open(req, timeout=timeout) as r:
-            data = r.read()
+            data = r.read(4 * 1024 * 1024 + 1)
+        if len(data) > 4 * 1024 * 1024:
+            return None
         return data if binary else data.decode('utf-8', 'ignore')
     except Exception:
         return None
@@ -998,8 +1018,33 @@ from urllib.parse import parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = HERE
 ASSETS = os.path.join(HERE, 'assets')
-BRIEF_FILE = os.path.join(HERE, 'last_brief.json')
+BRIEF_DIR = os.path.join(HERE, 'data', 'briefs')
+ACCESS_KEY = os.environ.get('STUDIO_ACCESS_KEY', '').strip()
+MAX_BODY_BYTES = int(os.environ.get('MAX_BODY_BYTES', str(8 * 1024 * 1024)))
+RATE_LIMIT_PER_MINUTE = int(os.environ.get('RATE_LIMIT_PER_MINUTE', '30'))
+RATE_BUCKETS = {}
+RATE_LOCK = threading.Lock()
 os.makedirs(ASSETS, exist_ok=True)
+os.makedirs(BRIEF_DIR, exist_ok=True)
+
+def _session_id(data):
+    raw = str((data or {}).get('session', '') or '')
+    clean = re.sub(r'[^a-zA-Z0-9_-]', '', raw)[:80]
+    return clean or hashlib.sha256(os.urandom(24)).hexdigest()[:32]
+
+def _brief_path(data):
+    return os.path.join(BRIEF_DIR, _session_id(data) + '.json')
+
+def _rate_allowed(client):
+    now = time.time()
+    with RATE_LOCK:
+        recent = [stamp for stamp in RATE_BUCKETS.get(client, []) if now - stamp < 60]
+        if len(recent) >= RATE_LIMIT_PER_MINUTE:
+            RATE_BUCKETS[client] = recent
+            return False
+        recent.append(now)
+        RATE_BUCKETS[client] = recent
+        return True
 
 
 def voice():
@@ -1146,8 +1191,31 @@ def render_styled(res):
 class H(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype='text/html; charset=utf-8'):
         b = body.encode() if isinstance(body, str) else body
-        self.send_response(code); self.send_header('Content-Type', ctype)
-        self.send_header('Content-Length', str(len(b))); self.end_headers()
+        if len(b) > 1024 and 'gzip' in self.headers.get('Accept-Encoding', '').lower() and (
+                ctype.startswith('text/') or 'json' in ctype or 'javascript' in ctype):
+            b = gzip.compress(b, compresslevel=6)
+            encoded = True
+        else:
+            encoded = False
+        self.send_response(code)
+        self.send_header('Content-Type', ctype)
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
+        self.send_header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        if ctype.startswith('text/html'):
+            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
+            self.send_header('Cache-Control', 'no-cache')
+        elif ctype.startswith('image/'):
+            self.send_header('Cache-Control', 'public, max-age=86400')
+        else:
+            self.send_header('Cache-Control', 'no-store')
+        if encoded:
+            self.send_header('Content-Encoding', 'gzip')
+            self.send_header('Vary', 'Accept-Encoding')
+        self.send_header('Content-Length', str(len(b)))
+        self.end_headers()
         self.wfile.write(b)
 
     def do_GET(self):
@@ -1157,17 +1225,30 @@ class H(BaseHTTPRequestHandler):
         if p == '/app':
             try:
                 doc = open(os.path.join(ROOT, 'banger-studio-app.html'), 'rb').read().decode('utf-8', 'ignore')
-                fuse = ''
-                fp = os.path.join(ROOT, 'fuse.html')
-                if os.path.exists(fp):
-                    fuse = open(fp, 'r', encoding='utf-8').read()
-                if '</body>' in doc:
-                    doc = doc.replace('</body>', fuse + '</body>', 1)
-                else:
-                    doc = doc + fuse
                 return self._send(200, doc)
             except Exception as e:
                 return self._send(404, 'app not found: ' + str(e))
+        if p == '/legacy':
+            try:
+                doc = open(os.path.join(ROOT, 'legacy-app.html'), 'rb').read().decode('utf-8', 'ignore')
+                fp = os.path.join(ROOT, 'fuse.html')
+                if os.path.exists(fp):
+                    fuse = open(fp, 'r', encoding='utf-8').read()
+                    doc = doc.replace('</body>', fuse + '</body>', 1) if '</body>' in doc else doc + fuse
+                return self._send(200, doc)
+            except Exception:
+                return self._send(404, 'legacy app not found')
+        static_files = {
+            '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
+            '/sw.js': ('sw.js', 'application/javascript; charset=utf-8'),
+            '/icon.svg': ('icon.svg', 'image/svg+xml')
+        }
+        if p in static_files:
+            name, ctype = static_files[p]
+            try:
+                return self._send(200, open(os.path.join(ROOT, name), 'rb').read(), ctype)
+            except Exception:
+                return self._send(404, 'asset not found')
         if p.startswith('/assets/'):
             fp = os.path.join(ASSETS, os.path.basename(p))
             if os.path.exists(fp):
@@ -1176,32 +1257,46 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, open(fp, 'rb').read(), ct)
             return self._send(404, 'no asset')
         if p == '/health':
-            return self._send(200, 'ok', 'text/plain')
+            return self._send(200, json.dumps({'status': 'ok', 'service': 'banger-studio'}), 'application/json')
         return self._send(404, 'not found')
 
     def do_POST(self):
-        ln = int(self.headers.get('Content-Length', 0))
-        data = json.loads(self.rfile.read(ln) or '{}')
+        if ACCESS_KEY and not hmac.compare_digest(self.headers.get('X-Studio-Key', ''), ACCESS_KEY):
+            return self._send(401, json.dumps({'error': 'access_required', 'message': 'Enter the private studio access key.'}), 'application/json')
+        client = self.client_address[0] if self.client_address else 'unknown'
+        if not _rate_allowed(client):
+            return self._send(429, json.dumps({'error': 'rate_limited', 'message': 'Too many requests. Wait a minute and try again.'}), 'application/json')
+        try:
+            ln = int(self.headers.get('Content-Length', 0))
+        except ValueError:
+            ln = 0
+        if ln < 0 or ln > MAX_BODY_BYTES:
+            return self._send(413, json.dumps({'error': 'too_large', 'message': 'This request is too large.'}), 'application/json')
+        try:
+            data = json.loads(self.rfile.read(ln) or '{}')
+        except Exception:
+            return self._send(400, json.dumps({'error': 'bad_json', 'message': 'The request body must be valid JSON.'}), 'application/json')
         if self.path == '/gather':
             D = gather(data.get('proj', 'MegaETH'), data.get('root', ''), ASSETS)
             brief = build_brief(D)
-            json.dump(brief, open(BRIEF_FILE, 'w'))
+            with open(_brief_path(data), 'w', encoding='utf-8') as fp:
+                json.dump(brief, fp)
             return self._send(200, json.dumps({'brief': brief}), 'application/json')
         if self.path == '/write':
-            try: brief = json.load(open(BRIEF_FILE))
+            try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
             except Exception: return self._send(200, '<div class="card"><div class="warn">gather first.</div></div>')
             res = write(brief, data.get('angle', ''),
                                want={'threads': int(data.get('th', 2)), 'posts': int(data.get('po', 4)), 'qts': int(data.get('qt', 4))},
                                voice=voice())
             return self._send(200, render_drafts(res))
         if self.path == '/styled':
-            try: brief = json.load(open(BRIEF_FILE))
+            try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
             except Exception: brief = None
             res = write_styled(data.get('topic', ''), data.get('type', 'banger'),
                                n=int(data.get('n', 3)), brief=brief, voice=voice())
             return self._send(200, render_styled(res))
         if self.path == '/compose':
-            try: brief = json.load(open(BRIEF_FILE))
+            try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
             except Exception: brief = None
             imgs = []
             for s in (data.get('images') or [])[:3]:
