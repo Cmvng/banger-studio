@@ -1,6 +1,13 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
+  let BW_SESSION = '';
+  try {
+    BW_SESSION = sessionStorage.getItem('banger_session') || ('bw_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2));
+    sessionStorage.setItem('banger_session', BW_SESSION);
+  } catch(e) {
+    BW_SESSION = 'bw_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+  }
   const NL = String.fromCharCode(10);
   function E(x){return (window.esc?esc(x):String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));}
   window.__bwHasBrief=false; window.__bwStore={}; let shots=[];
@@ -112,7 +119,7 @@
     if(!proj){ return; }
     $('bw_facts').innerHTML='<div class="bw-mut">gathering… opening the site, pulling numbers, reading X…</div>';
     try{
-      const r=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:proj,root:root})});
+      const r=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:proj,root:root,session:BW_SESSION})});
       const j=await r.json(); const b=j.brief||{}; window.__bwHasBrief=true;
       const facts=Object.keys(b.live_numbers||{}).map(k=>'<div class="bw-f"><b>'+E(k)+'</b>'+E(b.live_numbers[k])+'</div>').join('')||'<div class="bw-mut">no live numbers found — type facts above.</div>';
       $('bw_facts').innerHTML='<div class="bw-ok" style="margin:2px 0 6px">✓ facts pulled · $0.00 · will be used in the write</div><div class="bw-facts">'+facts+'</div>';
@@ -131,13 +138,13 @@
         var u=new URL(um[0]);
         var seg=u.pathname.split('/').filter(Boolean)[0]||'';
         var pj=$('bw_proj').value.trim()||seg||u.hostname.replace('www.','').split('.')[0];
-        var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0]})});
+        var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0],session:BW_SESSION})});
         await rr.json(); window.__bwHasBrief=true;
       }catch(e){}
     }
     $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">'+(shots.length?'reading your screenshot(s), then rewriting through the loop…':'writing '+n+' version(s) through the loop, then designing…')+'</div></div>';
     try{
-      const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief,images:shots})});
+      const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief,images:shots,session:BW_SESSION})});
       const res=await r.json(); renderVersions(res);
     }catch(e){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">write failed. try again.</div></div>'; }
   }
