@@ -1,5 +1,5 @@
-const CACHE = 'banger-studio-v5';
-const SHELL = ['/legacy', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'banger-studio-v6';
+const SHELL = ['/legacy', '/manifest.webmanifest', '/icon.svg', '/assets/cmvng-logo.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(

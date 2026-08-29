@@ -5,7 +5,7 @@ Serves the studio app at /app and the worker page at /.
 """
 import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket, base64, gzip, hmac, ipaddress, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote, unquote
 
 EMBEDDED_VOICE = """You are ghost-writing AS @cmvng. Below is how he ACTUALLY writes, distilled from 1,348 of his real tweets, plus a bank of his real posts. Match the SHAPE, RHYTHM and RESTRAINT of those examples above any generic idea of a 'good crypto post'. He openly hates long-form explainer threads (his own words: "I get tired of reading long form contents on X... the original idea for X was short form").
 
@@ -53,6 +53,48 @@ he needed help with a quick task, so instead of a bank transfer i sent him $50 U
 
 [honest reflection]
 please whatever you do.. don't fall in love with any project, it always ends in tears.... 99% of the time
+"""
+
+CMVNG_WRITING_ENGINE_V1 = r"""
+CMVNG WRITING ENGINE V1 - apply this operating system before every draft.
+
+THINKING PIPELINE:
+1. Discover the exact named project and its primary sources.
+2. Separate what is LIVE or CONFIRMED from PLANNED, ROADMAP, RUMORED, SPECULATIVE, OUTDATED, or UNVERIFIED.
+3. Find one observation worth saying. One post = one clear idea.
+4. Use facts as evidence for that idea, not as a feature dump.
+5. Write a take that sounds like @cmvng thinking in public, not a brand announcement.
+
+EVIDENCE RULES:
+- Never invent a number, product capability, date, funding amount, partnership, event, user count, token status, or first-person experience.
+- Source priority: official project site/docs/blog and primary data first; reputable reporting/data second; other creators only as context for what the timeline already thinks.
+- Do not copy another creator's framing or wording. Find what they missed, disagree with a reason, or say less.
+- Distinguish the product that works now from the roadmap. Do not turn points into an airdrop, a campaign into guaranteed rewards, a testnet into mainnet, or a proposal into a launch.
+- Preserve factual uncertainty in the draft. If a claim is unverified, either label it or leave it out.
+- Use >>> only to present earned evidence, verified steps, or sourced facts. Never use it as decoration.
+- Project name is context, not proof. If the supplied research has no meaningful fact beyond the name, ask for a real source instead of hallucinating.
+
+CMVNG STRUCTURE:
+- Dive directly into the strongest real observation. No throat-clearing.
+- Prefer short stacked lines and breathing room.
+- Deep dives: one thesis, then a few facts that prove it, then a dry or honest kicker.
+- A question is useful only when there is a real choice people can answer. Never bolt on hollow engagement bait.
+- Use the creator's real stake only when the input explicitly supplies it.
+- Let the graphic carry hierarchy: kicker, hook, proof, context, identity. Do not paste a paragraph into a design.
+
+AI SLOP BLACKLIST:
+Avoid generic openings and conclusions such as "in today's fast-paced world", "here's the thing", "let's dive in",
+"game changer", "this changes everything", "the future is here", "more than just", "at its core",
+"whether you're a seasoned pro", "only time will tell", "which side are you on", "thoughts?", and empty hype.
+Avoid polished corporate voice, repetitive contrast formulas, needless em dashes, hashtag stacks, ticker spam,
+fake certainty, fake lived experience, and multiple unrelated ideas in one post.
+
+Before returning a draft, silently check:
+- Can I state the one idea in one sentence?
+- Does every factual claim exist in the supplied evidence?
+- Did I label product status honestly?
+- Is there one human observation or point of view?
+- Would removing any line make the post sharper? If yes, remove it.
 """
 
 # ==================== THE BOSS ====================
@@ -125,14 +167,76 @@ def _readable(t):
 
 
 def gather(project, root_url, assets_dir):
-    """Return the full dossier for one project."""
+    """Return a source-aware dossier for one project."""
     os.makedirs(assets_dir, exist_ok=True)
-    D = {'project': project, 'root': root_url, 'when': time.strftime('%Y-%m-%d %H:%M'),
-         'facts': [], 'news': [], 'walked': [], 'x_pulse': [], 'images': [], 'kept': []}
+    project = _readable(str(project or ''))[:120]
+    supplied_root = str(root_url or '').strip()
+    slug_guess = re.sub(r'[^a-z0-9]', '', project.lower())
+    x_handle = ''
+    root_url = supplied_root
+    try:
+        parsed = urlparse(supplied_root if '://' in supplied_root else 'https://' + supplied_root)
+        host = (parsed.hostname or '').lower().removeprefix('www.')
+        if host in ('x.com', 'twitter.com', 'mobile.twitter.com'):
+            parts = [p for p in parsed.path.split('/') if p]
+            if parts and parts[0].lower() not in ('home', 'explore', 'search', 'i'):
+                x_handle = re.sub(r'[^A-Za-z0-9_]', '', parts[0])
+            root_url = ''
+        elif parsed.scheme in ('http', 'https') and parsed.hostname:
+            root_url = parsed.geturl()
+        else:
+            root_url = ''
+    except Exception:
+        root_url = ''
 
-    # 1 — the project's own site
+    # Discover the canonical CoinGecko record instead of assuming the project name is the API slug.
+    coin_slug = ''
+    coin_profile = None
+    search = fetch('https://api.coingecko.com/api/v3/search?query=' + quote(project))
+    if search:
+        try:
+            rows = json.loads(search).get('coins', [])[:12]
+            q = re.sub(r'[^a-z0-9]', '', project.lower())
+            def score(row):
+                name = re.sub(r'[^a-z0-9]', '', str(row.get('name', '')).lower())
+                symbol = re.sub(r'[^a-z0-9]', '', str(row.get('symbol', '')).lower())
+                cid = re.sub(r'[^a-z0-9]', '', str(row.get('id', '')).lower())
+                if q and q == name: return 0
+                if q and q in (symbol, cid): return 1
+                if q and (q in name or name in q): return 2
+                return 99
+            rows = sorted(rows, key=score)
+            if rows and score(rows[0]) < 99:
+                coin_slug = str(rows[0].get('id', ''))
+        except Exception:
+            pass
+    if not coin_slug:
+        coin_slug = slug_guess
+    if coin_slug:
+        raw_profile = fetch('https://api.coingecko.com/api/v3/coins/%s?localization=false&tickers=false&community_data=false&developer_data=false' % quote(coin_slug))
+        if raw_profile:
+            try:
+                coin_profile = json.loads(raw_profile)
+                links = coin_profile.get('links') or {}
+                homes = [u for u in (links.get('homepage') or []) if str(u).startswith(('http://', 'https://'))]
+                if not root_url and homes: root_url = homes[0]
+                if not x_handle: x_handle = re.sub(r'[^A-Za-z0-9_]', '', str(links.get('twitter_screen_name') or ''))
+            except Exception:
+                coin_profile = None
+
+    D = {'project': project, 'root': root_url, 'when': time.strftime('%Y-%m-%d %H:%M'),
+         'facts': [('project name', project)] if project else [], 'news': [], 'walked': [], 'x_pulse': [],
+         'images': [], 'kept': [], 'sources': [], 'research_status': 'partial'}
+    if root_url: D['sources'].append({'kind': 'official site', 'url': root_url, 'status': 'primary'})
+    if x_handle: D['sources'].append({'kind': 'official X', 'url': 'https://x.com/' + x_handle, 'status': 'primary'})
+    if coin_profile:
+        D['sources'].append({'kind': 'CoinGecko', 'url': 'https://www.coingecko.com/en/coins/' + coin_slug, 'status': 'secondary'})
+        desc = _readable(_clean(((coin_profile.get('description') or {}).get('en') or '')))
+        if desc: D['facts'].append(('project description', desc[:520]))
+
+    # 1 — the project's own site, when a valid project-specific site was supplied or discovered.
     walked_n=[0]
-    html = fetch(root_url)
+    html = fetch(root_url) if root_url else None
     if html:
         t = re.search(r'<title>(.*?)</title>', html)
         d = re.search(r'name="description" content="([^"]*)"', html)
@@ -160,10 +264,10 @@ def gather(project, root_url, assets_dir):
         for m in list(re.finditer(r'src="(https?://[^"]+\.(?:png|jpg|webp|svg))"', html))[:6]:
             D['images'].append(('site asset', m.group(1)))
 
-    # 2 — live numbers (free public APIs; slug guessed from project)
-    slug = project.lower().replace(' ', '')
+    # 2 — live numbers (free public APIs; canonical slug discovered above)
+    slug = coin_slug or slug_guess
     got_token = False
-    cg = fetch('https://api.coingecko.com/api/v3/coins/%s?localization=false&tickers=false&community_data=false&developer_data=false' % slug)
+    cg = json.dumps(coin_profile) if coin_profile else None
     if cg:
         try:
             j = json.loads(cg); md = j.get('market_data', {})
@@ -198,7 +302,8 @@ def gather(project, root_url, assets_dir):
             pass
 
     # 3 — the project's own X posts (public syndication, no login)
-    syn = fetch('https://syndication.twitter.com/srv/timeline-profile/screen-name/%s' % slug)
+    social_slug = x_handle or slug
+    syn = fetch('https://syndication.twitter.com/srv/timeline-profile/screen-name/%s' % quote(social_slug)) if social_slug else None
     if syn:
         texts = []
         try:
@@ -212,7 +317,7 @@ def gather(project, root_url, assets_dir):
         for t in texts[:6]:
             t = re.sub(r'https?://\S+', '', t).strip()
             t = _readable(t)
-            if len(t) > 12: D['x_pulse'].append(('@' + slug, t[:200]))
+            if len(t) > 12: D['x_pulse'].append(('@' + social_slug, t[:200]))
 
     # 4 — wider X chatter via public mirrors (proxy helps a lot here)
     for m in ['xcancel.com', 'nitter.poast.org', 'nitter.privacydev.net', 'lightbrd.com']:
@@ -235,6 +340,9 @@ def gather(project, root_url, assets_dir):
             except Exception:
                 pass
 
+    meaningful = [f for f in D['facts'] if f[0] not in ('project name', 'token price')]
+    if meaningful and D['sources']: D['research_status'] = 'ready'
+    elif meaningful: D['research_status'] = 'limited'
     return D
 
 
@@ -243,7 +351,12 @@ def build_brief(D):
     facts = dict(D['facts'])
     return {
         'project': D['project'],
-        'one_liner': facts.get('site description', ''),
+        'official_source': D.get('root', ''),
+        'research_status': D.get('research_status', 'partial'),
+        'sources': D.get('sources', [])[:8],
+        'one_liner': facts.get('site description') or facts.get('project description', ''),
+        'verified_facts': [{'label': k, 'value': v, 'status': 'confirmed'} for k, v in D['facts']
+                           if k not in ('project name', 'token price')][:16],
         'live_numbers': {k: v for k, v in D['facts']
                          if any(w in k for w in ['price', 'cap', 'change', 'TVL', 'ath', 'high'])},
         'news_feed': ['%s · %s' % (d, t) for d, t in D['news']][:8],
@@ -1048,7 +1161,7 @@ def _rate_allowed(client):
 
 
 def voice():
-    return EMBEDDED_VOICE.strip() or None
+    return (EMBEDDED_VOICE.strip() + '\n\n' + CMVNG_WRITING_ENGINE_V1.strip()) or None
 
 def esc(s): return html.escape(str(s))
 

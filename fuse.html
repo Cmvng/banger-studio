@@ -278,9 +278,10 @@
 
   if (typeof T === 'undefined' || !window.__bapi) return;
 
-  const ENH_VERSION = '2.0.0';
+  const ENH_VERSION = '3.0.0';
   const TEMPLATE_DRAFT_PREFIX = 'banger.template.';
   const BUILDER_DRAFT_KEY = 'banger.builder.autosave.v2';
+  const BRAND_LOGO = '/assets/cmvng-logo.png';
   let templateSaveTimer = 0;
   let builderSaveTimer = 0;
   let selectedBuilderId = null;
@@ -288,6 +289,8 @@
   let suppressBuilderSave = false;
   let foundationSrc = '';
   let foundationBuilderId = null;
+  let foundationLocked = true;
+  let originalBuilderDesign = null;
 
   const escEnh = value => String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -500,6 +503,40 @@
       #bscr .top{background:rgba(237,243,252,.88);backdrop-filter:blur(10px);position:relative;z-index:20}
       #bscr .rail{background:linear-gradient(180deg,rgba(237,243,252,.45),#EDF3FC 45%)}
       #bscr .add:hover{transform:translateY(-2px);box-shadow:0 14px 25px -14px rgba(18,58,158,.5)}
+      .bw-official-logo{display:block;width:142px;height:38px;object-fit:cover;object-position:center;border-radius:9px;background:#191919}
+      #home .hdr.bw-branded .mark,#home .hdr.bw-branded .word{display:none}
+      #home .hdr.bw-branded .bw-official-logo{margin-right:auto}
+      .wtop.bw-branded .mk,.wtop.bw-branded .t{display:none}.wtop.bw-branded .bw-official-logo{width:126px;height:34px}
+      #bscr .top.bw-branded .mk,#bscr .top.bw-branded .bdword{display:none}#bscr .top.bw-branded .bw-official-logo{width:100px;height:30px}
+      .bw-source-help{display:none;margin:-4px 0 10px;padding:9px 10px;border-radius:10px;background:#FFF3DC;color:#8A5B12;
+        font:650 9px/1.45 'Space Mono',monospace}.bw-source-help.on{display:block}
+      .bw-research-progress{margin:7px 0 11px;padding:11px;border-radius:12px;background:linear-gradient(135deg,#EEF3FD,#E4EEFF);
+        color:#20386A;font:700 9.5px/1.45 'Space Mono',monospace}
+      #bw_creative_sheet{position:fixed;inset:0;z-index:10080;display:none;align-items:flex-end;justify-content:center;background:rgba(7,17,36,.52);backdrop-filter:blur(5px)}
+      #bw_creative_sheet.on{display:flex}#bw_creative_sheet .bw-kit{width:min(680px,100%);max-height:88vh;overflow:auto;padding:15px 14px 24px;
+        border-radius:22px 22px 0 0;background:#F7FAFF;box-shadow:0 -25px 60px -28px rgba(12,27,51,.8)}
+      .bw-kit-head{position:sticky;top:-15px;z-index:4;display:flex;align-items:center;gap:10px;margin:-15px -14px 13px;padding:14px;
+        background:rgba(247,250,255,.94);border-bottom:1px solid #DFE8F6;backdrop-filter:blur(12px)}
+      .bw-kit-head img{width:92px;height:28px;object-fit:cover;border-radius:7px}.bw-kit-head div{flex:1}.bw-kit-head b{display:block;font:800 13px 'Sora';color:#101C33}
+      .bw-kit-head small{display:block;margin-top:2px;font:650 8px 'Space Mono';color:#6C82AB}.bw-kit-head button{border:0;background:#E8EFFB;color:#20386A;
+        width:31px;height:31px;border-radius:10px;font:800 17px 'Sora'}
+      .bw-kit-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none}.bw-kit-tabs::-webkit-scrollbar{display:none}
+      .bw-kit-tab{flex:0 0 auto;border:1px solid #D6E2F5;border-radius:999px;padding:8px 11px;background:#fff;color:#5D719A;font:750 9px 'Space Mono'}
+      .bw-kit-tab.on{border-color:#2E6BFF;background:#123A9E;color:#fff}.bw-kit-section{display:none}.bw-kit-section.on{display:block}
+      .bw-kit-note{margin:1px 1px 10px;color:#6C82AB;font:600 9px/1.5 'Space Mono'}.bw-kit-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+      .bw-kit-card{position:relative;min-height:116px;border:1px solid #D6E2F5;border-radius:15px;padding:11px;background:#fff;text-align:left;overflow:hidden;
+        box-shadow:0 12px 26px -22px rgba(18,58,158,.65)}.bw-kit-card:active{transform:scale(.985)}
+      .bw-kit-card b{position:relative;z-index:2;display:block;font:800 11px 'Sora';color:#101C33}.bw-kit-card span{position:relative;z-index:2;display:block;margin-top:4px;
+        max-width:125px;font:600 8px/1.4 'Space Mono';color:#7185AA}.bw-kit-card i{position:absolute;right:8px;bottom:7px;color:#2E6BFF;font:900 10px 'Sora';font-style:normal}
+      .bw-type-demo{height:65px;margin-bottom:8px;border-radius:10px;padding:8px;background:#101C33;color:#fff;overflow:hidden}.bw-type-demo small{display:block;color:#78A1FF;
+        font:800 6px 'Space Mono';letter-spacing:.12em;text-transform:uppercase}.bw-type-demo strong{display:block;margin-top:4px;font:850 17px/1 'Sora';letter-spacing:-.05em}.bw-type-demo em{font:italic 400 17px 'Instrument Serif';color:#9DBDF9}
+      .bw-char-demo{height:72px;margin:-3px 0 7px;display:flex;align-items:center;justify-content:center}.bw-char-demo svg{height:72px;max-width:100%}
+      .bw-doodle-demo{height:58px;margin-bottom:7px;display:flex;align-items:center;justify-content:center}.bw-doodle-demo svg{height:54px;max-width:100%}
+      .bw-layout-demo{height:64px;margin-bottom:8px;border-radius:9px;background:#EAF1FF;border:1px solid #CFDDF4;padding:7px;display:grid;gap:4px}
+      .bw-layout-demo u{display:block;text-decoration:none;border-radius:4px;background:#123A9E}.bw-layout-demo u:nth-child(2){width:72%;background:#8FB2F6}.bw-layout-demo u:nth-child(3){width:45%;background:#C6D7F5}
+      .bw-foundation-layer{pointer-events:none!important}.bw-foundation-locked{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;
+        background:#E4F7EC;color:#17623B;font:800 7.5px 'Space Mono'}.bw-reset-original{width:100%;margin-top:8px;border:1px solid #B7CAEB;border-radius:11px;
+        padding:10px;background:#fff;color:#123A9E;font:800 10px 'Sora'}
       @media(min-width:700px){
         .bw-home-lab{padding:26px 28px}.bw-home-lab h2{font-size:31px;max-width:430px}.bw-home-lab h2 em{font-size:34px}
         .bw-home-lab p{font-size:12.5px;max-width:430px}.bw-home-stack{right:30px;bottom:19px;transform:scale(1.2)}
@@ -512,6 +549,7 @@
         .bw-flow-step{font-size:7.5px}.bw-design-card{flex-basis:66vw}.bw-build-actions{grid-template-columns:1fr 1fr}
         #bscr .top .bdword{display:none}#bscr .top{gap:5px;padding-left:8px;padding-right:8px}
         #bscr .top .ghost,#bscr .top .exp{padding:8px 9px;font-size:10px}
+        .bw-official-logo{width:118px;height:34px}.bw-kit-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       }
     `;
     document.head.appendChild(style);
@@ -610,6 +648,7 @@
     if (gather) gather.textContent = 'research project →';
     const compose = document.getElementById('bw_go');
     if (compose) compose.textContent = 'write + show visual directions →';
+    installSmartWriteHandoff();
     return true;
   }
 
@@ -630,12 +669,183 @@
       installHomeLaunchpad();
       decorateWriterWorkspace();
       decorateResearchResult();
+      installOfficialBrand();
     });
     observer.observe(document.body, {childList:true, subtree:true});
     document.addEventListener('click', event => {
       if (event.target.closest && event.target.closest('#bw_gather')) setWriterFlow(0);
       if (event.target.closest && event.target.closest('#bw_go')) setWriterFlow(1);
     });
+  }
+
+  function installOfficialBrand() {
+    [
+      {node:document.querySelector('#home .hdr'), before:document.querySelector('#home .hdr .hav')},
+      {node:document.querySelector('#wscr .wtop'), before:document.querySelector('#wscr .wtop .mk')},
+      {node:document.querySelector('#bscr .top'), before:document.querySelector('#bscr .top .mk')}
+    ].forEach(item => {
+      if (!item.node || item.node.querySelector('.bw-official-logo')) return;
+      const logo = document.createElement('img');
+      logo.className = 'bw-official-logo';
+      logo.src = BRAND_LOGO;
+      logo.alt = 'cmvng';
+      logo.onload = () => item.node.classList.add('bw-branded');
+      logo.onerror = () => logo.remove();
+      if (item.before) item.node.insertBefore(logo, item.before); else item.node.appendChild(logo);
+    });
+  }
+
+  function normaliseProjectSource(raw) {
+    const value = String(raw || '').trim();
+    if (!value) return {url:'', warning:''};
+    try {
+      const url = new URL(/^https?:\/\//i.test(value) ? value : 'https://' + value);
+      const host = url.hostname.toLowerCase().replace(/^www\./, '');
+      if (host === 'x.com' || host === 'twitter.com') {
+        const handle = url.pathname.split('/').filter(Boolean)[0] || '';
+        if (!handle || /^(home|explore|search|i|settings)$/i.test(handle)) {
+          return {url:'', warning:'That is only the X homepage. Paste the project’s exact profile, website, docs, or a specific post.'};
+        }
+      }
+      return {url:url.href, warning:''};
+    } catch (_) {
+      return {url:'', warning:'That source does not look complete. Use the official website, docs, or exact X profile.'};
+    }
+  }
+
+  function briefEvidence(brief) {
+    brief = brief || {};
+    const numbers = Object.keys(brief.live_numbers || {}).filter(key => !/no token|not found|unknown/i.test(String(brief.live_numbers[key])));
+    const news = (brief.news_feed || []).filter(Boolean);
+    const pulse = (brief.x_pulse || []).filter(Boolean);
+    const pages = (brief.pages_read || []).filter(Boolean);
+    const one = String(brief.one_liner || '').trim();
+    return {numbers,news,pulse,pages,one,count:numbers.length + news.length + pulse.length + pages.length + (one ? 1 : 0)};
+  }
+
+  function renderResearchBrief(project, brief) {
+    const facts = document.getElementById('bw_facts');
+    if (!facts) return;
+    const evidence = briefEvidence(brief);
+    const numberHTML = evidence.numbers.slice(0, 5).map(key => '<div class="bw-f"><b>' + escEnh(key) + '</b>' + escEnh(brief.live_numbers[key]) + '</div>').join('');
+    const sourcePills = [
+      evidence.one ? '<div class="bw-f"><b>official description</b>found</div>' : '',
+      evidence.pages.length ? '<div class="bw-f"><b>official pages</b>' + evidence.pages.length + ' read</div>' : '',
+      evidence.pulse.length ? '<div class="bw-f"><b>X signals</b>' + evidence.pulse.length + ' found</div>' : '',
+      evidence.news.length ? '<div class="bw-f"><b>updates</b>' + evidence.news.length + ' found</div>' : ''
+    ].join('');
+    if (evidence.count) {
+      facts.innerHTML = '<div class="bw-research-ready"><b>' + escEnh(project) + ' research brief ready ✓</b><span>' + evidence.count +
+        ' verified signal' + (evidence.count === 1 ? '' : 's') + ' will guide the writing and design match.</span></div><div class="bw-facts">' + numberHTML + sourcePills + '</div>';
+      setWriterFlow(1);
+    } else {
+      facts.innerHTML = '<div class="bw-warn"><b>I found the project name, but not enough verifiable material yet.</b><br><br>' +
+        'Paste the official website, docs, exact X profile/post, or attach screenshots. The app will not spend a writing call on invented facts.</div>';
+    }
+  }
+
+  async function smartResearchProject(force) {
+    const projectInput = document.getElementById('bw_proj');
+    const rootInput = document.getElementById('bw_root');
+    const facts = document.getElementById('bw_facts');
+    const project = String(projectInput && projectInput.value || '').trim();
+    if (!project) {
+      if (facts) facts.innerHTML = '<div class="bw-warn">Enter the actual project name first.</div>';
+      return false;
+    }
+    const source = normaliseProjectSource(rootInput && rootInput.value);
+    const helper = document.querySelector('.bw-source-help');
+    if (helper) {
+      helper.textContent = source.warning;
+      helper.classList.toggle('on', !!source.warning);
+    }
+    const key = project.toLowerCase() + '|' + source.url.toLowerCase();
+    if (!force && window.__bwHasBrief && window.__bwBriefKey === key && briefEvidence(window.__bwBrief).count) return true;
+    if (facts) facts.innerHTML = '<div class="bw-research-progress">researching ' + escEnh(project) +
+      '… checking the official source, product details, live numbers and current signals before writing.</div>';
+    setWriterFlow(0);
+    try {
+      const session = sessionStorage.getItem('banger_session') || '';
+      const response = await fetch('/gather', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({proj:project,root:source.url,session})});
+      const result = await response.json();
+      const brief = result.brief || {};
+      window.__bwBrief = brief;
+      window.__bwBriefKey = key;
+      window.__bwBriefProject = project;
+      window.__bwHasBrief = briefEvidence(brief).count > 0;
+      renderResearchBrief(project, brief);
+      return window.__bwHasBrief;
+    } catch (_) {
+      window.__bwHasBrief = false;
+      if (facts) facts.innerHTML = '<div class="bw-warn">Research could not finish. Check the project link or attach screenshots, then try again.</div>';
+      return false;
+    }
+  }
+
+  function installSmartWriteHandoff() {
+    const project = document.getElementById('bw_proj');
+    const root = document.getElementById('bw_root');
+    const gather = document.getElementById('bw_gather');
+    const write = document.getElementById('bw_go');
+    if (!project || !root || !gather || !write || write.dataset.smartHandoff) return;
+    write.dataset.smartHandoff = '1';
+    root.placeholder = 'website, docs or exact X profile';
+    let helper = document.querySelector('.bw-source-help');
+    if (!helper) {
+      helper = document.createElement('div');
+      helper.className = 'bw-source-help';
+      root.closest('.bw-row').insertAdjacentElement('afterend', helper);
+    }
+    const invalidate = () => { window.__bwHasBrief = false; window.__bwBriefKey = ''; };
+    project.addEventListener('input', invalidate);
+    root.addEventListener('input', () => {
+      invalidate();
+      const source = normaliseProjectSource(root.value);
+      helper.textContent = source.warning;
+      helper.classList.toggle('on', !!source.warning);
+    });
+    gather.onclick = async () => {
+      gather.disabled = true;
+      const old = gather.textContent;
+      gather.textContent = 'researching project…';
+      await smartResearchProject(true);
+      gather.disabled = false;
+      gather.textContent = old;
+    };
+    const nativeWrite = write.onclick;
+    write.onclick = async event => {
+      if (write.dataset.busy === '1') return;
+      const projectName = project.value.trim();
+      const topic = document.getElementById('bw_topic');
+      const originalTopic = topic ? topic.value.trim() : '';
+      const hasScreens = !!((window.__bwShots || []).length);
+      write.dataset.busy = '1';
+      write.disabled = true;
+      const old = write.textContent;
+      try {
+        if (projectName) {
+          write.textContent = 'researching before writing…';
+          const researched = await smartResearchProject(false);
+          const detailedInput = originalTopic.length > 180 || /\d/.test(originalTopic);
+          if (!researched && !hasScreens && !detailedInput) return;
+          if (topic) {
+            const source = normaliseProjectSource(root.value).url;
+            topic.value = 'Project: ' + projectName + '\n' + (source ? 'Official source: ' + source + '\n' : '') +
+              'Requested angle: ' + (originalTopic || 'general project overview');
+          }
+        }
+        write.textContent = 'writing in your voice…';
+        const running = nativeWrite && nativeWrite.call(write, event);
+        if (topic) topic.value = originalTopic;
+        await running;
+      } finally {
+        if (topic) topic.value = originalTopic;
+        write.dataset.busy = '0';
+        write.disabled = false;
+        write.textContent = old;
+      }
+    };
   }
 
   /* ---------- Reliable template controls ---------- */
@@ -1273,6 +1483,69 @@
     }
   }
 
+  function normalizeHandoff(items, frame) {
+    const W = Math.max(320, +(frame && frame.W) || 1080);
+    const H = Math.max(320, +(frame && frame.H) || 1350);
+    const seenText = [];
+    return (Array.isArray(items) ? items : []).reduce((clean, source) => {
+      if (!source || !source.type) return clean;
+      const item = Object.assign({}, source);
+      const rawWidth = Number(item.w);
+      const rawX = Number(item.x);
+      const rawY = Number(item.y);
+      if (![rawWidth, rawX, rawY].every(Number.isFinite)) return clean;
+      item.w = Math.round(Math.max(24, Math.min(W * 1.15, rawWidth)));
+      const estimatedHeight = item.type === 'text'
+        ? Math.max(24, (+item.size || 42) * (+item.lh || 1.15) * Math.max(1, String(item.text || '').split('\n').length))
+        : Math.max(24, item.w * (+item.ar || .72));
+      item.x = Math.round(Math.max(-item.w * .08, Math.min(W - item.w * .12, rawX)));
+      item.y = Math.round(Math.max(-estimatedHeight * .08, Math.min(H - estimatedHeight * .12, rawY)));
+      if (item.type === 'text') {
+        item.text = String(item.text || '').replace(/\u00a0/g, ' ').trim();
+        if (!item.text) return clean;
+        const signature = item.text.toLowerCase().replace(/\s+/g, ' ');
+        const duplicate = seenText.some(prior => prior.signature === signature && Math.abs(prior.x - item.x) < 24 && Math.abs(prior.y - item.y) < 24);
+        if (duplicate) return clean;
+        seenText.push({signature, x:item.x, y:item.y});
+      }
+      clean.push(item);
+      return clean;
+    }, []).slice(0, 47);
+  }
+
+  function isFoundationItem(item) {
+    return !!item && ((foundationBuilderId && item.__id === foundationBuilderId) || (foundationSrc && item.src === foundationSrc));
+  }
+
+  function applyFoundationLock() {
+    if (!foundationSrc || !window.__bapi) return;
+    const state = builderState();
+    const index = state.data.findIndex(isFoundationItem);
+    if (index >= 0 && state.list[index]) foundationBuilderId = state.list[index].id;
+    const node = foundationBuilderId && document.getElementById('bdel' + foundationBuilderId);
+    if (node) {
+      node.classList.toggle('bw-foundation-layer', foundationLocked);
+      node.setAttribute('aria-label', foundationLocked ? 'locked design foundation' : 'unlocked design foundation');
+    }
+    if (foundationLocked && selectedBuilderId === foundationBuilderId) {
+      selectedBuilderId = null;
+      if (window.__bapi.deselect) window.__bapi.deselect();
+    }
+  }
+
+  function resetOriginalBuilderDesign() {
+    if (!originalBuilderDesign || !Array.isArray(originalBuilderDesign.data)) {
+      toast('open a template in Builder first', 'warn');
+      return;
+    }
+    foundationSrc = originalBuilderDesign.foundationSrc || '';
+    foundationLocked = true;
+    importBuilderState(clone(originalBuilderDesign.data), originalBuilderDesign.format, originalBuilderDesign.background, null);
+    requestAnimationFrame(applyFoundationLock);
+    renderBuilderSheet();
+    toast('original template composition restored', 'ok');
+  }
+
   window.openInBuilder = async function completeOpenInBuilder() {
     if (!cur) return 0;
     const stageNode = document.getElementById('stage');
@@ -1287,21 +1560,24 @@
     let background = '';
     try { background = await captureDesignBackground(); } catch (_) {}
     const count = await nativeOpenInBuilder();
-    if (background) {
-      const data = window.__bapi.serialize();
-      const format = window.__bapi.fmt()[0];
-      foundationSrc = background;
-      const foundation = {type:'img',src:background,x:0,y:0,w:frame.W,ar:frame.H / frame.W};
-      suppressBuilderSave = true;
-      window.__bapi.importEls([foundation].concat(data), format, 'transparent');
-      suppressBuilderSave = false;
-      const imported = window.__bapi.list();
-      foundationBuilderId = imported[0] ? imported[0].id : null;
-    }
+    const data = normalizeHandoff(window.__bapi.serialize(), frame);
+    const format = window.__bapi.fmt()[0];
+    foundationSrc = background || '';
+    foundationLocked = true;
+    const foundation = background ? [{type:'img',src:background,x:0,y:0,w:frame.W,ar:frame.H / frame.W}] : [];
+    const completeDesign = foundation.concat(data);
+    suppressBuilderSave = true;
+    window.__bapi.importEls(completeDesign, format, 'transparent');
+    suppressBuilderSave = false;
+    const imported = window.__bapi.list();
+    foundationBuilderId = background && imported[0] ? imported[0].id : null;
+    originalBuilderDesign = {data:clone(completeDesign),format,background:'transparent',foundationSrc};
+    requestAnimationFrame(applyFoundationLock);
     installBuilderEnhancements();
     scheduleBuilderSave();
-    const total = count + (background ? 1 : 0);
-    toast('design ready · ' + total + ' editable layers · full foundation included', 'ok');
+    const total = completeDesign.length;
+    const cleaned = Math.max(0, count - data.length);
+    toast('remix ready · ' + total + ' stable layers' + (cleaned ? ' · ' + cleaned + ' duplicate/off-canvas layer' + (cleaned === 1 ? '' : 's') + ' cleaned' : ''), 'ok');
     return total;
   };
 
@@ -1336,6 +1612,7 @@
     } else {
       selectedBuilderId = null;
     }
+    requestAnimationFrame(applyFoundationLock);
     scheduleBuilderSave();
   }
 
@@ -1350,6 +1627,10 @@
       toast('select a layer on the canvas first', 'warn');
       return;
     }
+    if (foundationLocked && isFoundationItem(state.data[index])) {
+      toast('the design foundation is locked · unlock it in Layers if you really need to move it', 'warn');
+      return;
+    }
     mutator(state.data, index, state);
     const target = keepIndex == null ? Math.min(index, state.data.length - 1) : keepIndex;
     importBuilderState(state.data, state.format, state.background, target);
@@ -1357,7 +1638,7 @@
   }
 
   function describeLayer(item, index) {
-    if ((foundationBuilderId && item.__id === foundationBuilderId) || (foundationSrc && item.src === foundationSrc)) return 'design foundation';
+    if (isFoundationItem(item)) return 'design foundation' + (foundationLocked ? ' · locked' : ' · unlocked');
     if (item.type === 'text') return (item.text || 'text').replace(/\s+/g, ' ').slice(0, 34);
     if (item.type === 'logo') return (item.key || 'coin') + ' logo';
     if (item.type === 'char' || item.type === 'cast' || item.type === 'peep' || item.type === 'mascot') return 'character';
@@ -1370,6 +1651,11 @@
     if (index < 0) return '<div class="bw-inspector-section"><label>selection</label><div style="font:600 12px Sora;color:#6C82AB;line-height:1.5">Tap any layer on the canvas, then reopen Layers to edit it.</div></div>';
     const item = state.data[index];
     let html = '<div class="bw-inspector-section"><label>selected · ' + escEnh(describeLayer(item, index)) + '</label>';
+    if (isFoundationItem(item)) {
+      return html + '<div style="font:600 12px Sora;color:#6C82AB;line-height:1.55">This preserves the original template styling behind your editable layers. Keep it locked for a scatter-proof remix.</div>' +
+        '<div class="bw-control-grid" style="margin-top:9px"><button class="bw-ctrl primary" data-a="toggle-foundation">' + (foundationLocked ? 'unlock foundation' : 'lock foundation') + '</button>' +
+        '<button class="bw-ctrl" data-a="reset-original">reset original</button></div></div>';
+    }
     if (item.type === 'text') {
       html += '<div class="bw-range"><span>type size</span><input id="bw_font_size" type="range" min="12" max="180" value="' +
         Math.round(item.size || 60) + '"><output>' + Math.round(item.size || 60) + '</output></div>' +
@@ -1405,6 +1691,7 @@
     const host = sheet.querySelector('.bw-sheet');
     host.innerHTML = '<div class="bw-sheet-head"><div><b>builder controls</b><br><small>' + state.data.length +
       ' editable layers · autosave on</small></div><button type="button" data-close>×</button></div>' +
+      (originalBuilderDesign ? '<div class="bw-inspector-section"><label>safe remix</label><div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><span class="bw-foundation-locked">' + (foundationLocked ? '◆ foundation locked' : '◇ foundation unlocked') + '</span><div class="bw-control-grid" style="flex:1"><button class="bw-ctrl" data-a="toggle-foundation">' + (foundationLocked ? 'unlock' : 'lock') + '</button><button class="bw-ctrl" data-a="reset-original">reset original</button></div></div><div style="font:600 11px Sora;color:#6C82AB;line-height:1.5;margin-top:8px">Reset restores the exact template handoff if experimenting moves anything out of place.</div></div>' : '') +
       selectedControlHTML(state, index) +
       '<div class="bw-inspector-section"><label>canvas background</label><div class="bw-color-row">' +
       '<input id="bw_canvas_color" type="color" value="#EDF3FC"><button class="bw-ctrl" data-a="apply-bg" style="flex:1">apply color</button>' +
@@ -1431,6 +1718,13 @@
       const node = host.querySelector(selector);
       if (node) node.onclick = fn;
     };
+    host.querySelectorAll('[data-a="toggle-foundation"]').forEach(node => node.onclick = () => {
+      foundationLocked = !foundationLocked;
+      applyFoundationLock();
+      renderBuilderSheet();
+      toast(foundationLocked ? 'design foundation locked' : 'foundation unlocked · move carefully', foundationLocked ? 'ok' : 'warn');
+    });
+    host.querySelectorAll('[data-a="reset-original"]').forEach(node => node.onclick = resetOriginalBuilderDesign);
     bind('[data-a="back"]', () => mutateSelected((data, i) => {
       if (i > 0) [data[i - 1], data[i]] = [data[i], data[i - 1]];
     }, Math.max(0, index - 1)));
@@ -1493,6 +1787,156 @@
     }
     sheet.classList.add('on');
     renderBuilderSheet();
+  }
+
+  const CREATOR_CHARACTERS = {
+    researcher:{label:'researcher',note:'magnifier + evidence',inner:'<path d="M18 120V98Q22 84 50 84Q78 84 82 98V120Z" fill="#123A9E"/><circle cx="50" cy="48" r="29" fill="#F1B98A"/><path d="M23 43Q25 13 50 13Q77 13 79 43Q62 31 23 43Z" fill="#0C1B33"/><circle cx="42" cy="48" r="3" fill="#0C1B33"/><circle cx="58" cy="48" r="3" fill="#0C1B33"/><path d="M42 61Q50 67 58 61" stroke="#0C1B33" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="72" cy="76" r="14" stroke="#2E6BFF" stroke-width="6" fill="#EAF1FF" fill-opacity=".65"/><path d="M82 86L94 99" stroke="#2E6BFF" stroke-width="7" stroke-linecap="round"/>',tags:'research magnifier facts'},
+    writer:{label:'writer',note:'pen + notebook',inner:'<path d="M15 120L20 93Q28 82 50 82Q72 82 80 93L85 120Z" fill="#2E6BFF"/><circle cx="50" cy="47" r="29" fill="#8B5B3F"/><path d="M22 48Q18 16 50 13Q80 16 79 48L67 33Q48 42 22 48Z" fill="#101C33"/><circle cx="40" cy="49" r="3" fill="#101C33"/><circle cx="58" cy="49" r="3" fill="#101C33"/><path d="M42 62Q50 66 58 62" stroke="#101C33" stroke-width="3" fill="none"/><rect x="20" y="88" width="38" height="27" rx="4" fill="#fff" stroke="#101C33" stroke-width="3"/><path d="M55 105L84 79" stroke="#FFC53D" stroke-width="6" stroke-linecap="round"/><path d="M82 78L89 74L86 82Z" fill="#101C33"/>',tags:'writer pen notebook creator'},
+    builder:{label:'builder',note:'tools + making',inner:'<path d="M17 120V96Q23 84 50 84Q77 84 83 96V120Z" fill="#FFC53D"/><circle cx="50" cy="48" r="28" fill="#C68157"/><path d="M23 36Q28 13 50 13Q72 13 77 36Z" fill="#2E6BFF"/><rect x="20" y="32" width="60" height="10" rx="5" fill="#123A9E"/><circle cx="40" cy="49" r="3" fill="#101C33"/><circle cx="59" cy="49" r="3" fill="#101C33"/><path d="M42 62Q50 67 58 62" stroke="#101C33" stroke-width="3" fill="none"/><path d="M72 86L91 105M85 82L94 91L79 106L70 97Z" stroke="#101C33" stroke-width="5" fill="#EAF1FF" stroke-linejoin="round"/>',tags:'builder wrench construction maker'},
+    analyst:{label:'analyst',note:'charts + sharp take',inner:'<path d="M16 120L21 94Q29 83 50 83Q71 83 79 94L84 120Z" fill="#101C33"/><circle cx="50" cy="46" r="29" fill="#E5AA7A"/><path d="M23 39Q29 12 51 13Q73 14 78 40Q54 26 23 39Z" fill="#4B2D24"/><rect x="29" y="43" width="17" height="12" rx="5" fill="none" stroke="#2E6BFF" stroke-width="4"/><rect x="54" y="43" width="17" height="12" rx="5" fill="none" stroke="#2E6BFF" stroke-width="4"/><path d="M46 48H54M42 64Q50 68 58 64" stroke="#101C33" stroke-width="3" fill="none"/><rect x="62" y="86" width="30" height="25" rx="4" fill="#EAF1FF"/><path d="M67 104L74 96L80 100L87 90" stroke="#18B27B" stroke-width="4" fill="none" stroke-linecap="round"/>',tags:'analyst chart glasses data'},
+    astronaut:{label:'astronaut',note:'future + launch',inner:'<path d="M17 120V93Q24 80 50 80Q76 80 83 93V120Z" fill="#EAF1FF" stroke="#123A9E" stroke-width="4"/><circle cx="50" cy="46" r="34" fill="#EAF1FF" stroke="#123A9E" stroke-width="5"/><ellipse cx="50" cy="47" rx="24" ry="20" fill="#101C33"/><path d="M30 48Q50 31 70 48" stroke="#78A1FF" stroke-width="4" fill="none"/><circle cx="42" cy="51" r="3" fill="#68F0B2"/><circle cx="58" cy="51" r="3" fill="#68F0B2"/><rect x="37" y="92" width="26" height="18" rx="6" fill="#2E6BFF"/><circle cx="44" cy="101" r="3" fill="#68F0B2"/><circle cx="55" cy="101" r="3" fill="#FFC53D"/>',tags:'astronaut space future launch'},
+    hype:{label:'hype mode',note:'energy + announcement',inner:'<path d="M22 120V93Q29 82 50 82Q71 82 78 93V120Z" fill="#2E6BFF"/><circle cx="50" cy="48" r="27" fill="#6F432E"/><path d="M25 40Q28 13 50 13Q72 13 75 40L65 30L55 38L45 29L35 38Z" fill="#101C33"/><path d="M38 48L45 44M55 44L62 48M40 62Q50 71 60 62" stroke="#101C33" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M24 91L7 70M76 91L93 70" stroke="#2E6BFF" stroke-width="12" stroke-linecap="round"/><path d="M5 56L12 43M88 43L95 56" stroke="#FFC53D" stroke-width="5" stroke-linecap="round"/>',tags:'hype excited announcement celebration'},
+    calm:{label:'calm conviction',note:'hold + thoughtful',inner:'<path d="M18 120V96Q24 84 50 84Q76 84 82 96V120Z" fill="#18B27B"/><circle cx="50" cy="48" r="29" fill="#B8734F"/><path d="M21 44Q23 14 49 12Q76 14 79 44Q61 28 21 44Z" fill="#101C33"/><path d="M36 50Q41 46 46 50M54 50Q59 46 64 50M43 64Q50 68 57 64" stroke="#101C33" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M29 96Q50 109 71 96" stroke="#EAF1FF" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M14 73C8 66 8 58 14 52M86 52C92 58 92 66 86 73" stroke="#78A1FF" stroke-width="4" fill="none" stroke-linecap="round"/>',tags:'calm thinking conviction hold'},
+    anon:{label:'onchain anon',note:'hood + signal',inner:'<path d="M15 120L20 92Q26 80 50 80Q74 80 80 92L85 120Z" fill="#101C33"/><path d="M50 10Q22 13 17 48Q17 72 34 84H66Q83 72 83 48Q78 13 50 10Z" fill="#123A9E"/><ellipse cx="50" cy="51" rx="24" ry="22" fill="#071124"/><circle cx="41" cy="50" r="4" fill="#68F0B2"/><circle cx="59" cy="50" r="4" fill="#68F0B2"/><path d="M38 66H62" stroke="#78A1FF" stroke-width="3" stroke-linecap="round"/><path d="M26 99H40L45 91L52 106L59 96H74" stroke="#68F0B2" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',tags:'anon hood onchain signal crypto'}
+  };
+
+  const CREATIVE_DOODLES = {
+    rocket:{label:'launch rocket',vb:'0 0 100 100',ar:1,inner:'<path d="M58 12C75 19 83 35 82 53L61 74L28 41L49 20Z" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><circle cx="62" cy="34" r="8" fill="#EAF1FF"/><path d="M29 44L16 53L31 60M58 73L49 87L41 70" fill="#78A1FF" stroke="#101C33" stroke-width="4"/><path d="M24 69L12 86M36 76L27 92" stroke="#FFC53D" stroke-width="6" stroke-linecap="round"/>'},
+    cursor:{label:'cursor click',vb:'0 0 100 100',ar:1,inner:'<path d="M24 12L78 59L55 62L68 87L55 94L42 68L26 84Z" fill="#fff" stroke="#123A9E" stroke-width="6" stroke-linejoin="round"/><path d="M68 12V28M86 26L74 38M43 5L48 20" stroke="#2E6BFF" stroke-width="6" stroke-linecap="round"/>'},
+    sticker:{label:'sticker burst',vb:'0 0 100 100',ar:1,inner:'<path d="M50 4L61 18L78 12L80 31L96 40L85 55L92 72L73 77L66 94L50 84L34 94L27 77L8 72L15 55L4 40L20 31L22 12L39 18Z" fill="#FFC53D" stroke="#101C33" stroke-width="4"/><path d="M29 50H71" stroke="#101C33" stroke-width="7" stroke-linecap="round"/>'},
+    tape:{label:'tape strip',vb:'0 0 180 60',ar:.333,inner:'<path d="M8 17L171 6L176 44L13 55Z" fill="#9DBDF9" fill-opacity=".72"/><path d="M18 21L164 12M23 47L168 36" stroke="#fff" stroke-width="3" stroke-dasharray="8 7" opacity=".75"/>'},
+    quote:{label:'quote marks',vb:'0 0 120 80',ar:.667,inner:'<path d="M8 67C8 35 21 14 48 8V25C35 29 29 39 29 49H48V72H8ZM66 67C66 35 79 14 106 8V25C93 29 87 39 87 49H106V72H66Z" fill="#2E6BFF"/>'},
+    orbit2:{label:'double orbit',vb:'0 0 180 100',ar:.556,inner:'<ellipse cx="90" cy="50" rx="78" ry="28" transform="rotate(-8 90 50)" stroke="#123A9E" stroke-width="5"/><ellipse cx="90" cy="50" rx="62" ry="42" transform="rotate(13 90 50)" stroke="#78A1FF" stroke-width="4"/><circle cx="151" cy="28" r="8" fill="#68F0B2"/>'},
+    brackets:{label:'focus brackets',vb:'0 0 120 100',ar:.833,inner:'<path d="M42 10H12V39M78 10H108V39M42 90H12V61M78 90H108V61" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'},
+    speed:{label:'speed lines',vb:'0 0 180 90',ar:.5,inner:'<path d="M8 18H115M28 45H170M8 72H132" stroke="#123A9E" stroke-width="8" stroke-linecap="round"/><path d="M129 18H164M8 45H17M146 72H173" stroke="#78A1FF" stroke-width="8" stroke-linecap="round"/>'}
+  };
+
+  function appendCreativeElements(items) {
+    const state = builderState();
+    const remaining = Math.max(0, 48 - state.data.length);
+    if (!remaining) { toast('the Builder is at its 48-layer limit', 'warn'); return; }
+    const added = items.slice(0, remaining);
+    const next = state.data.concat(added);
+    importBuilderState(next, state.format, state.background, next.length - 1);
+    applyFoundationLock();
+    renderBuilderSheet();
+    toast(added.length + ' creative layer' + (added.length === 1 ? '' : 's') + ' added', 'ok');
+  }
+
+  function textStructure(kind) {
+    const format = window.__bapi.fmt();
+    const W = format[1], H = format[2];
+    const left = Math.round(W * .09), width = Math.round(W * .82), mid = Math.round(H * .28);
+    if (kind === 'hero') return [
+      {type:'text',text:'PROJECT INTELLIGENCE · 01',x:left,y:mid,w:width,size:24,color:'#2E6BFF',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'the part nobody\nis watching yet',x:left,y:mid+55,w:width,size:92,color:'#101C33',ff:'Sora',fw:'800',lh:'0.96',pre:1},
+      {type:'text',text:'one clear observation supported by the strongest verified fact.',x:left,y:mid+280,w:Math.round(width*.76),size:31,color:'#61769D',ff:'Sora',fw:'600',lh:'1.35'}
+    ];
+    if (kind === 'editorial') return [
+      {type:'text',text:'THE OBSERVATION',x:left,y:mid,w:width,size:22,color:'#2E6BFF',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'something changed…',x:left,y:mid+58,w:width,size:102,color:'#101C33',ff:'Instrument Serif',fw:'400',fst:'italic'},
+      {type:'text',text:'and the numbers explain why.',x:left,y:mid+190,w:width,size:54,color:'#123A9E',ff:'Sora',fw:'800'}
+    ];
+    if (kind === 'number') return [
+      {type:'text',text:'THE NUMBER THAT MATTERS',x:left,y:mid,w:width,size:23,color:'#5D7BB8',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'2.4M',x:left,y:mid+45,w:width,size:180,color:'#123A9E',ff:'Sora',fw:'800',lh:'.9'},
+      {type:'text',text:'verified users · current snapshot',x:left,y:mid+240,w:width,size:32,color:'#101C33',ff:'Sora',fw:'700'}
+    ];
+    if (kind === 'quote') return [
+      {type:'text',text:'“',x:left,y:mid-55,w:150,size:150,color:'#9DBDF9',ff:'Instrument Serif',fw:'400'},
+      {type:'text',text:'the best take is usually\nthe simplest true one.',x:left+25,y:mid+55,w:width-25,size:74,color:'#101C33',ff:'Instrument Serif',fw:'400',fst:'italic',lh:'1.04',pre:1},
+      {type:'text',text:'@cmvng · research note',x:left+25,y:mid+260,w:width,size:24,color:'#2E6BFF',ff:'Space Mono',fw:'800'}
+    ];
+    if (kind === 'contrast') return [
+      {type:'text',text:'WHAT THEY SAY',x:left,y:mid,w:Math.round(width*.44),size:22,color:'#6C82AB',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'the narrative',x:left,y:mid+55,w:Math.round(width*.44),size:58,color:'#101C33',ff:'Sora',fw:'800'},
+      {type:'text',text:'WHAT THE DATA SAYS',x:left+Math.round(width*.53),y:mid,w:Math.round(width*.47),size:22,color:'#2E6BFF',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'the reality',x:left+Math.round(width*.53),y:mid+55,w:Math.round(width*.47),size:58,color:'#123A9E',ff:'Sora',fw:'800'}
+    ];
+    return [
+      {type:'text',text:'01 · THE HOOK',x:left,y:mid,w:width,size:23,color:'#2E6BFF',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'one strong idea',x:left,y:mid+55,w:width,size:92,color:'#101C33',ff:'Sora',fw:'800'},
+      {type:'text',text:'>>> evidence that earns its place\n>>> another concrete supporting fact',x:left,y:mid+185,w:width,size:35,color:'#123A9E',ff:'Space Mono',fw:'700',lh:'1.6',pre:1}
+    ];
+  }
+
+  function specialLayout(kind) {
+    const format = window.__bapi.fmt();
+    const W = format[1], H = format[2], pad = Math.round(W*.07);
+    const panel = (x,y,w,h,fill,rx) => ({type:'svgraw',vb:'0 0 100 100',inner:'<rect width="100" height="100" rx="' + (rx||8) + '" fill="' + fill + '"/>',x,y,w,ar:h/w});
+    if (kind === 'spotlight') return [panel(pad,Math.round(H*.16),W-pad*2,Math.round(H*.66),'#101C33',7),
+      {type:'text',text:'PROJECT SPOTLIGHT',x:pad+45,y:Math.round(H*.22),w:W-pad*2-90,size:24,color:'#78A1FF',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'the signal\nworth watching',x:pad+45,y:Math.round(H*.30),w:W-pad*2-90,size:86,color:'#FFFFFF',ff:'Sora',fw:'800',lh:'.98',pre:1}];
+    if (kind === 'split') return [panel(pad,Math.round(H*.18),Math.round((W-pad*2)*.48),Math.round(H*.6),'#123A9E',8),panel(Math.round(W*.52),Math.round(H*.18),Math.round((W-pad*2)*.48),Math.round(H*.6),'#E5EDFA',8),
+      {type:'text',text:'BEFORE',x:pad+32,y:Math.round(H*.25),w:Math.round(W*.33),size:24,color:'#78A1FF',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'AFTER',x:Math.round(W*.55),y:Math.round(H*.25),w:Math.round(W*.33),size:24,color:'#123A9E',ff:'Space Mono',fw:'800'}];
+    if (kind === 'data') return [panel(pad,Math.round(H*.16),W-pad*2,Math.round(H*.68),'#EEF3FD',8),
+      panel(pad+30,Math.round(H*.30),Math.round((W-pad*2-75)*.5),Math.round(H*.20),'#FFFFFF',6),panel(Math.round(W*.52),Math.round(H*.30),Math.round((W-pad*2-75)*.5),Math.round(H*.20),'#123A9E',6),
+      {type:'text',text:'THE DATA',x:pad+35,y:Math.round(H*.21),w:W-pad*2-70,size:55,color:'#101C33',ff:'Sora',fw:'800'}];
+    if (kind === 'breaking') return [panel(0,Math.round(H*.18),W,Math.round(H*.55),'#123A9E',0),
+      {type:'text',text:'BREAKING · PROJECT UPDATE',x:pad,y:Math.round(H*.25),w:W-pad*2,size:25,color:'#9DBDF9',ff:'Space Mono',fw:'800'},
+      {type:'text',text:'something\njust changed.',x:pad,y:Math.round(H*.34),w:W-pad*2,size:105,color:'#FFFFFF',ff:'Sora',fw:'800',lh:'.92',pre:1}];
+    if (kind === 'frame') return [{type:'svgraw',vb:'0 0 100 125',inner:'<rect x="3" y="3" width="94" height="119" rx="7" fill="none" stroke="#123A9E" stroke-width="3"/><path d="M3 24H97M18 3V24" stroke="#123A9E" stroke-width="3"/><circle cx="9" cy="13" r="3" fill="#FF5E57"/><circle cx="18" cy="13" r="3" fill="#FFC53D"/><circle cx="27" cy="13" r="3" fill="#18B27B"/>',x:pad,y:Math.round(H*.09),w:W-pad*2,ar:1.25},
+      {type:'text',text:'research window',x:pad+55,y:Math.round(H*.16),w:W-pad*2-110,size:25,color:'#2E6BFF',ff:'Space Mono',fw:'800'}];
+    return [panel(pad,Math.round(H*.14),W-pad*2,Math.round(H*.7),'#FFC53D',0),
+      {type:'svgraw',vb:'0 0 100 100',inner:'<rect x="3" y="3" width="94" height="94" fill="none" stroke="#101C33" stroke-width="6"/>',x:pad+28,y:Math.round(H*.17),w:W-pad*2-56,ar:1},
+      {type:'text',text:'NO FLUFF.\nJUST THE SIGNAL.',x:pad+60,y:Math.round(H*.30),w:W-pad*2-120,size:82,color:'#101C33',ff:'Archivo Black',fw:'800',lh:'.95',pre:1}];
+  }
+
+  function openNativeBuilderTool(label) {
+    const button = Array.from(document.querySelectorAll('#bd_rail .add')).find(node => (node.querySelector('small') || {}).textContent === label);
+    if (button) button.click();
+  }
+
+  function openCreativeKit() {
+    let sheet = document.getElementById('bw_creative_sheet');
+    if (!sheet) {
+      sheet = document.createElement('div');
+      sheet.id = 'bw_creative_sheet';
+      const types = [
+        ['hero','headline hierarchy','kicker + bold hook + deck'],['editorial','editorial serif','observation with a human feel'],['number','number hero','one verified number dominates'],
+        ['quote','quote composition','opinion with attribution'],['contrast','comparison type','narrative versus reality'],['evidence','evidence stack','hook plus earned >>> facts']
+      ];
+      const layouts = [['spotlight','project spotlight'],['split','before / after'],['data','data dashboard'],['breaking','breaking update'],['frame','browser frame'],['brutal','brutalist poster']];
+      sheet.innerHTML = '<div class="bw-kit"><div class="bw-kit-head"><img src="' + BRAND_LOGO + '" alt="cmvng"><div><b>creative kit</b><small>characters · doodles · type systems · special layouts</small></div><button type="button" data-close>×</button></div>' +
+        '<div class="bw-kit-tabs"><button class="bw-kit-tab on" data-tab="characters">characters</button><button class="bw-kit-tab" data-tab="type">text structures</button>' +
+        '<button class="bw-kit-tab" data-tab="doodles">doodles</button><button class="bw-kit-tab" data-tab="layouts">special designs</button><button class="bw-kit-tab" data-tab="brand">brand</button></div>' +
+        '<section class="bw-kit-section on" data-section="characters"><div class="bw-kit-note">New native CMVNG characters. Each one stays movable, resizable and reusable as a Builder layer.</div>' +
+        '<div class="bw-kit-grid">' + Object.keys(CREATOR_CHARACTERS).map(key => { const item=CREATOR_CHARACTERS[key]; return '<button class="bw-kit-card" data-character="'+key+'"><div class="bw-char-demo"><svg viewBox="0 0 100 120">'+item.inner+'</svg></div><b>'+item.label+'</b><span>'+item.note+'</span><i>add +</i></button>'; }).join('') +
+        '<button class="bw-kit-card" data-native="character"><div class="bw-char-demo"><div style="font:900 30px Sora;color:#2E6BFF">＋</div></div><b>full character library</b><span>original people, mascots, casts and AI character generator</span><i>open →</i></button></div></section>' +
+        '<section class="bw-kit-section" data-section="type"><div class="bw-kit-note">Add complete type hierarchies, not isolated text boxes. Every line remains editable.</div><div class="bw-kit-grid">' +
+        types.map(item => '<button class="bw-kit-card" data-type="'+item[0]+'"><div class="bw-type-demo"><small>'+item[1]+'</small><strong>make the <em>idea</em> clear.</strong></div><b>'+item[1]+'</b><span>'+item[2]+'</span><i>add +</i></button>').join('') + '</div></section>' +
+        '<section class="bw-kit-section" data-section="doodles"><div class="bw-kit-note">More visual punctuation for emphasis, motion, annotation and CT-native energy.</div><div class="bw-kit-grid">' +
+        Object.keys(CREATIVE_DOODLES).map(key => {const item=CREATIVE_DOODLES[key];return '<button class="bw-kit-card" data-doodle="'+key+'"><div class="bw-doodle-demo"><svg viewBox="'+item.vb+'">'+item.inner+'</svg></div><b>'+item.label+'</b><span>native vector · scales cleanly</span><i>add +</i></button>';}).join('') +
+        '<button class="bw-kit-card" data-native="doodle"><div class="bw-doodle-demo"><div style="font:900 30px Sora;color:#2E6BFF">＋</div></div><b>original doodle library</b><span>arrows, scribbles, highlights, bursts and marks</span><i>open →</i></button></div></section>' +
+        '<section class="bw-kit-section" data-section="layouts"><div class="bw-kit-note">Add a special composition on top of the current canvas without deleting your existing work.</div><div class="bw-kit-grid">' +
+        layouts.map(item => '<button class="bw-kit-card" data-layout="'+item[0]+'"><div class="bw-layout-demo"><u></u><u></u><u></u></div><b>'+item[1]+'</b><span>structured visual treatment</span><i>add +</i></button>').join('') + '</div></section>' +
+        '<section class="bw-kit-section" data-section="brand"><div class="bw-kit-note">Use your official identity consistently in custom designs and exports.</div><div class="bw-kit-grid">' +
+        '<button class="bw-kit-card" data-brand-logo><div style="height:72px;border-radius:10px;background:#191919;display:flex;align-items:center;justify-content:center;overflow:hidden"><img src="'+BRAND_LOGO+'" style="width:100%;height:100%;object-fit:cover"></div><b>official cmvng logo</b><span>adds the supplied brand mark</span><i>add +</i></button>' +
+        '<button class="bw-kit-card" data-native="chip"><div class="bw-type-demo"><small>IDENTITY</small><strong>@cmvng</strong></div><b>identity chip</b><span>compact creator signature</span><i>add +</i></button></div></section></div>';
+      sheet.onclick = event => { if (event.target === sheet || event.target.closest('[data-close]')) sheet.classList.remove('on'); };
+      sheet.querySelectorAll('.bw-kit-tab').forEach(button => button.onclick = () => {
+        sheet.querySelectorAll('.bw-kit-tab').forEach(x => x.classList.toggle('on', x === button));
+        sheet.querySelectorAll('.bw-kit-section').forEach(x => x.classList.toggle('on', x.dataset.section === button.dataset.tab));
+      });
+      sheet.querySelectorAll('[data-character]').forEach(button => button.onclick = () => {
+        const item=CREATOR_CHARACTERS[button.dataset.character]; const fmt=window.__bapi.fmt();
+        appendCreativeElements([{type:'svgraw',vb:'0 0 100 120',inner:item.inner,ar:1.2,x:Math.round(fmt[1]*.62),y:Math.round(fmt[2]*.42),w:Math.round(fmt[1]*.28)}]); sheet.classList.remove('on');
+      });
+      sheet.querySelectorAll('[data-doodle]').forEach(button => button.onclick = () => {
+        const item=CREATIVE_DOODLES[button.dataset.doodle]; const fmt=window.__bapi.fmt();
+        appendCreativeElements([{type:'svgraw',vb:item.vb,inner:item.inner,ar:item.ar,x:Math.round(fmt[1]*.62),y:Math.round(fmt[2]*.18),w:Math.round(fmt[1]*.25)}]); sheet.classList.remove('on');
+      });
+      sheet.querySelectorAll('[data-type]').forEach(button => button.onclick = () => { appendCreativeElements(textStructure(button.dataset.type)); sheet.classList.remove('on'); });
+      sheet.querySelectorAll('[data-layout]').forEach(button => button.onclick = () => { appendCreativeElements(specialLayout(button.dataset.layout)); sheet.classList.remove('on'); });
+      sheet.querySelector('[data-brand-logo]').onclick = () => { const fmt=window.__bapi.fmt(); appendCreativeElements([{type:'img',src:BRAND_LOGO,ar:1,x:Math.round(fmt[1]*.07),y:Math.round(fmt[2]*.77),w:220}]); sheet.classList.remove('on'); };
+      sheet.querySelectorAll('[data-native]').forEach(button => button.onclick = () => {
+        const kind=button.dataset.native; sheet.classList.remove('on');
+        if (kind === 'chip') window.__bapi.add('chip'); else openNativeBuilderTool(kind);
+      });
+      document.body.appendChild(sheet);
+    }
+    sheet.classList.add('on');
   }
 
   function addBuilderShape(kind) {
@@ -1566,7 +2010,10 @@
     const fullCanvas = saved.data.find(item => (item.type === 'img' || item.type === 'shot') &&
       /^data:image\//.test(item.src || '') && +(item.x || 0) === 0 && +(item.y || 0) === 0 && +(item.w || 0) >= 800);
     foundationSrc = fullCanvas ? fullCanvas.src : '';
+    foundationLocked = !!foundationSrc;
+    originalBuilderDesign = {data:clone(saved.data),format:saved.format || 'post',background:saved.background || '',foundationSrc};
     importBuilderState(saved.data, saved.format || 'post', saved.background || '', null);
+    requestAnimationFrame(applyFoundationLock);
     renderBuilderSheet();
     toast('builder autosave restored', 'ok');
   }
@@ -1596,6 +2043,11 @@
     }
     const rail = document.getElementById('bd_rail');
     if (rail) {
+      const kit = document.createElement('button');
+      kit.className = 'add bw-rail-new bw-creative-rail';
+      kit.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.2L20 8l-4.2 3.8L17 18l-5-3-5 3 1.2-6.2L4 8l5.8-.8Z"/><path d="M19 16v6M16 19h6"/></svg></div><small>creative kit</small>';
+      kit.onclick = openCreativeKit;
+      rail.insertBefore(kit, rail.firstChild);
       const shape = document.createElement('button');
       shape.className = 'add bw-rail-new';
       shape.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="16" cy="8" r="3"/></svg></div><small>shapes</small>';
@@ -1609,7 +2061,16 @@
     }
     document.addEventListener('pointerdown', event => {
       const element = event.target.closest && event.target.closest('#bd_canvas .el');
-      if (element) selectedBuilderId = +(element.id || '').replace('bdel', '');
+      if (element) {
+        const id = +(element.id || '').replace('bdel', '');
+        if (foundationLocked && id === foundationBuilderId) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          toast('foundation locked · edit the layers above it', 'warn');
+          return;
+        }
+        selectedBuilderId = id;
+      }
     }, true);
     const canvas = document.getElementById('bd_canvas');
     if (canvas) {
@@ -1632,8 +2093,8 @@
     if (!sessionStorage.getItem('banger.builder.coach.v2') && !screen.querySelector('.bw-builder-coach')) {
       const coach = document.createElement('div');
       coach.className = 'bw-builder-coach';
-      coach.innerHTML = '<b>your full design is editable here</b><p>Tap text, images, logos, or the design foundation. Use Layers to reorder, duplicate, style, or delete anything.</p>' +
-        '<button type="button">show me the layers →</button>';
+      coach.innerHTML = '<b>remix without breaking the design</b><p>The original composition is locked underneath. Edit the layers above it, use Creative Kit for richer characters and doodles, or reset the exact template anytime.</p>' +
+        '<button type="button">show me safe remix controls →</button>';
       coach.querySelector('button').onclick = () => {
         sessionStorage.setItem('banger.builder.coach.v2', '1');
         coach.remove();
@@ -1641,6 +2102,7 @@
       };
       screen.appendChild(coach);
     }
+    requestAnimationFrame(applyFoundationLock);
   }
 
   const nativeGoBuilder = window.goBuilder;
@@ -1653,6 +2115,7 @@
   injectExperienceStyles();
   installHomeLaunchpad();
   decorateWriterWorkspace();
+  installOfficialBrand();
   installExperienceObserver();
   installBuilderEnhancements();
 })();
