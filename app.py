@@ -5,7 +5,7 @@ Serves the studio app at /app and the worker page at /.
 """
 import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket, base64, gzip, hmac, ipaddress, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, quote, unquote
+from urllib.parse import urlparse, quote, unquote, urljoin
 
 EMBEDDED_VOICE = """You are ghost-writing AS @cmvng. Below is how he ACTUALLY writes, distilled from 1,348 of his real tweets, plus a bank of his real posts. Match the SHAPE, RHYTHM and RESTRAINT of those examples above any generic idea of a 'good crypto post'. He openly hates long-form explainer threads (his own words: "I get tired of reading long form contents on X... the original idea for X was short form").
 
@@ -172,6 +172,47 @@ def _html_text(fragment):
     return _readable(html.unescape(re.sub(r'<[^>]+>', ' ', fragment)))
 
 
+def _html_attrs(tag):
+    """Return quoted HTML attributes without depending on their order."""
+    attrs = {}
+    for match in re.finditer(r'([:\w-]+)\s*=\s*(["\'])(.*?)\2', tag or '', re.I | re.S):
+        attrs[match.group(1).lower()] = html.unescape(match.group(3)).strip()
+    return attrs
+
+
+def _meta_value(raw, *names):
+    """Read a meta value whether name/property appears before or after content."""
+    wanted = {str(name).lower() for name in names}
+    for tag in re.findall(r'<meta\b[^>]*>', raw or '', re.I | re.S):
+        attrs = _html_attrs(tag)
+        key = (attrs.get('name') or attrs.get('property') or '').lower()
+        if key in wanted and attrs.get('content'):
+            return attrs['content']
+    return ''
+
+
+_FACT_CUE = re.compile(
+    r'\b(?:launch(?:ed|ing)?|mainnet|testnet|live|raise[ds]?|fund(?:ed|ing)?|revenue|users?|transactions?|'
+    r'volume|tvl|market cap|price|acquir(?:ed|es)|partner(?:ed|ship)?|release[ds]?|ship(?:ped|s)?|'
+    r'open[- ]source|protocol|product|network|token|airdrop|campaign|milestone|announc(?:ed|ement))\b',
+    re.I,
+)
+
+
+def _meaningful_evidence(value):
+    """Reject navigation/title fluff while keeping short, concrete launch or number facts."""
+    value = _readable(str(value or ''))
+    if not value:
+        return False
+    low = value.lower().strip(' .-|')
+    if low in ('home', 'homepage', 'welcome', 'official website', 'website', 'learn more', 'coming soon'):
+        return False
+    words = re.findall(r"[A-Za-z0-9$%][A-Za-z0-9$%'.+-]*", value)
+    if re.search(r'\d', value) or _FACT_CUE.search(value):
+        return len(words) >= 2
+    return len(value) >= 36 and len(words) >= 6
+
+
 def _extract_link_source(source_url):
     """Read the exact pasted page or X post instead of silently collapsing it to a domain/profile."""
     out = {'url': source_url or '', 'kind': '', 'title': '', 'author': '', 'excerpts': [], 'images': [], 'x_handle': ''}
@@ -183,7 +224,7 @@ def _extract_link_source(source_url):
     except Exception:
         return out
 
-    if host in ('x.com', 'twitter.com', 'mobile.twitter.com'):
+    if host in ('x.com', 'twitter.com', 'mobile.twitter.com', 'mobile.x.com'):
         parts = [p for p in parsed.path.split('/') if p]
         out['x_handle'] = re.sub(r'[^A-Za-z0-9_]', '', parts[0]) if parts else ''
         status = re.search(r'/status/(\d+)', parsed.path)
@@ -223,12 +264,12 @@ def _extract_link_source(source_url):
     if not raw:
         return out
     title = re.search(r'<title[^>]*>(.*?)</title>', raw, re.I | re.S)
-    og_title = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', raw, re.I)
-    desc = re.search(r'<meta[^>]+(?:name|property)=["\'](?:description|og:description)["\'][^>]+content=["\']([^"\']+)', raw, re.I)
-    out['title'] = _html_text((og_title or title).group(1)) if (og_title or title) else ''
-    if desc:
-        value = _html_text(desc.group(1))
-        if value: out['excerpts'].append(value[:1000])
+    meta_title = _meta_value(raw, 'og:title', 'twitter:title')
+    out['title'] = _html_text(meta_title or (title.group(1) if title else ''))
+    description = _meta_value(raw, 'description', 'og:description', 'twitter:description')
+    if description:
+        value = _html_text(description)
+        if _meaningful_evidence(value): out['excerpts'].append(value[:1000])
     for match in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.I):
         try: value = _readable(json.loads('"' + match.group(1) + '"'))
         except Exception: value = ''
@@ -244,8 +285,8 @@ def _extract_link_source(source_url):
         key = re.sub(r'\W+', '', value.lower())[:180]
         if key and all(key != prior[0] for prior in unique): unique.append((key, value))
     out['excerpts'] = [value for _, value in unique][:8]
-    og = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', raw, re.I)
-    if og: out['images'].append(html.unescape(og.group(1)))
+    og_image = _meta_value(raw, 'og:image', 'twitter:image')
+    if og_image: out['images'].append(urljoin(source_url, og_image))
     return out
 
 
@@ -261,7 +302,7 @@ def gather(project, root_url, assets_dir):
     try:
         parsed = urlparse(supplied_root if '://' in supplied_root else 'https://' + supplied_root)
         host = (parsed.hostname or '').lower().removeprefix('www.')
-        if host in ('x.com', 'twitter.com', 'mobile.twitter.com'):
+        if host in ('x.com', 'twitter.com', 'mobile.twitter.com', 'mobile.x.com'):
             parts = [p for p in parsed.path.split('/') if p]
             if parts and parts[0].lower() not in ('home', 'explore', 'search', 'i'):
                 x_handle = re.sub(r'[^A-Za-z0-9_]', '', parts[0])
@@ -334,12 +375,12 @@ def gather(project, root_url, assets_dir):
     if html:
         parsed_root = urlparse(root_url)
         base_origin = '%s://%s' % (parsed_root.scheme, parsed_root.netloc)
-        t = re.search(r'<title>(.*?)</title>', html)
-        d = re.search(r'name="description" content="([^"]*)"', html)
-        if t: D['facts'].append(('site title', _clean(t.group(1))))
-        if d: D['facts'].append(('site description', _clean(d.group(1))))
-        og = re.search(r'og:image" content="([^"]*)"', html)
-        if og: D['images'].append(('share image', og.group(1)))
+        t = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
+        site_description = _html_text(_meta_value(html, 'description', 'og:description', 'twitter:description'))
+        if t: D['facts'].append(('site title', _html_text(t.group(1))))
+        if site_description: D['facts'].append(('site description', site_description[:520]))
+        share_image = _meta_value(html, 'og:image', 'twitter:image')
+        if share_image: D['images'].append(('share image', urljoin(root_url, share_image)))
         txt = re.sub(r'<[^>]+>', ' ', html)
         for m in re.finditer(r'(20\d\d/\d{1,2}/\d{1,2})\s*·?\s*([A-Z][A-Za-z0-9 $&\.\-]{6,60})', txt):
             item = (m.group(1), m.group(2).strip().title())
@@ -437,8 +478,16 @@ def gather(project, root_url, assets_dir):
                 pass
 
     weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
-    meaningful = [f for f in D['facts'] if f[0] not in weak_labels]
-    evidence_count = len(meaningful) + len(D.get('source_excerpt') or []) + len(D.get('news') or []) + len(D.get('walked') or []) + len(D.get('x_pulse') or [])
+    meaningful = [f for f in D['facts'] if f[0] not in weak_labels and _meaningful_evidence('%s %s' % f)]
+    excerpts = [value for value in (D.get('source_excerpt') or []) if _meaningful_evidence(value)]
+    news = [item for item in (D.get('news') or []) if _meaningful_evidence(' '.join(map(str, item)))]
+    walked = [item for item in (D.get('walked') or [])
+              if any(_meaningful_evidence(point) for point in (item.get('points') or []))]
+    # Mirror chatter is context, not project evidence. Only the project's own timeline can unlock writing.
+    owned_pulse = [item for item in (D.get('x_pulse') or [])
+                   if item and item[0] != 'mirror' and _meaningful_evidence(item[1])]
+    D['source_excerpt'] = excerpts
+    evidence_count = len(meaningful) + len(excerpts) + len(news) + len(walked) + len(owned_pulse)
     D['writing_ready'] = evidence_count > 0
     if evidence_count and D['sources']: D['research_status'] = 'ready'
     elif evidence_count: D['research_status'] = 'limited'
@@ -448,18 +497,19 @@ def gather(project, root_url, assets_dir):
 def build_brief(D):
     """Collapse the dossier into the tiny object the writer reads (keeps API cost low)."""
     facts = dict(D['facts'])
+    weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
     return {
         'project': D['project'],
         'official_source': D.get('root', ''),
         'source_url': D.get('source_url', ''),
         'source_kind': D.get('source_kind', ''),
-        'source_excerpt': D.get('source_excerpt', [])[:8],
+        'source_excerpt': [value for value in D.get('source_excerpt', []) if _meaningful_evidence(value)][:8],
         'research_status': D.get('research_status', 'partial'),
         'writing_ready': bool(D.get('writing_ready')),
         'sources': D.get('sources', [])[:8],
         'one_liner': facts.get('site description') or facts.get('project description', ''),
         'verified_facts': [{'label': k, 'value': v, 'status': 'confirmed'} for k, v in D['facts']
-                           if k not in ('project name', 'token price')][:16],
+                           if k not in weak_labels and _meaningful_evidence('%s %s' % (k, v))][:16],
         'live_numbers': {k: v for k, v in D['facts']
                          if any(w in k for w in ['price', 'cap', 'change', 'TVL', 'ath', 'high'])},
         'news_feed': ['%s · %s' % (d, t) for d, t in D['news']][:8],
@@ -467,6 +517,63 @@ def build_brief(D):
         'x_pulse': [{'src': s, 'text': t} for s, t in D['x_pulse']][:10],
         'assets_for_design': D['kept'],
     }
+
+
+_PASTED_URL = re.compile(
+    r'(?:https?://[^\s<>"\']+|(?:www\.)?[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:/[^\s<>"\']*)?)',
+    re.I,
+)
+
+
+def _brief_has_evidence(brief):
+    """Re-check stored briefs server-side instead of trusting a UI flag."""
+    if not isinstance(brief, dict) or brief.get('writing_ready') is False:
+        return False
+    if any(_meaningful_evidence(value) for value in (brief.get('source_excerpt') or [])):
+        return True
+    if any(_meaningful_evidence('%s %s' % (item.get('label', ''), item.get('value', '')))
+           for item in (brief.get('verified_facts') or []) if isinstance(item, dict)):
+        return True
+    if any(_meaningful_evidence('%s %s' % (key, value))
+           for key, value in (brief.get('live_numbers') or {}).items()):
+        return True
+    if any(brief.get(key) for key in ('news_feed', 'pages_read', 'x_pulse')):
+        return True
+    return _meaningful_evidence(brief.get('one_liner'))
+
+
+def _topic_has_concrete_material(topic):
+    """Detect user-supplied facts after removing links and smart-handoff boilerplate."""
+    text = str(topic or '')
+    text = _PASTED_URL.sub(' ', text)
+    kept = []
+    for line in text.splitlines():
+        line = line.strip()
+        if re.match(r'^(?:project|official source)\s*:', line, re.I):
+            continue
+        if re.match(r'^requested angle\s*:\s*(?:general (?:project )?overview|overview|research this|write about it)\s*$', line, re.I):
+            continue
+        kept.append(re.sub(r'^requested angle\s*:\s*', '', line, flags=re.I))
+    material = _readable(' '.join(kept))
+    if not material:
+        return False
+    words = re.findall(r"[A-Za-z0-9$%][A-Za-z0-9$%'.+-]*", material)
+    if re.search(r'\d', material) or _FACT_CUE.search(material):
+        return len(words) >= 3
+    return len(material) >= 140 and len(words) >= 24
+
+
+def _compose_preflight(topic, brief=None, images=None):
+    """Return a user-facing blocker before any paid call when a pasted link yielded no evidence."""
+    topic = str(topic or '')
+    has_link = bool(_PASTED_URL.search(topic))
+    if images or _brief_has_evidence(brief) or _topic_has_concrete_material(topic):
+        return ''
+    if has_link or re.search(r'^\s*(?:project|official source)\s*:', topic, re.I | re.M):
+        return ('I could not read enough evidence from that link, so I did not spend a writing call. '
+                'Paste the exact article or X post, use the official website/docs, attach screenshots, '
+                'or add concrete facts such as what launched, a date, a number, or a named event.')
+    return ''
 
 
 
@@ -848,6 +955,9 @@ def generate_character(style_key, pose_key, extra=''):
 
 def write(brief, angle, want=None, voice=None):
     """want = dict e.g. {'threads':2,'posts':4,'qts':4}. Returns drafts + usage."""
+    if not _brief_has_evidence(brief):
+        return {'error': 'need_facts',
+                'message': 'Research did not return enough verifiable material. Use an exact source or attach concrete facts before writing.'}
     if not API_KEY:
         return {'error': 'no_api_key', 'message': 'Set ANTHROPIC_API_KEY in Railway variables.'}
     want = want or {'threads': 2, 'posts': 4, 'qts': 4}
@@ -1073,6 +1183,9 @@ def _verify(v, srctext, usertext):
 
 def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
     """One topic -> several studied LENSES, each run through the critique loop, each with its real-template slots filled. One API call."""
+    blocker = _compose_preflight(topic, brief, images)
+    if blocker:
+        return {'error': 'need_facts', 'message': blocker}
     if not API_KEY:
         return {'error': 'no_api_key', 'message': 'Set ANTHROPIC_API_KEY in Railway variables.'}
     ctype = (ctype or "banger").lower()
@@ -1530,10 +1643,26 @@ class H(BaseHTTPRequestHandler):
                 s = str(s)
                 if s.startswith('data:') and ';base64,' in s:
                     head, b64 = s.split(';base64,', 1)
-                    imgs.append({'media_type': head[5:] or 'image/jpeg', 'data': b64})
+                    media_type = head[5:] or 'image/jpeg'
+                    if media_type not in ('image/jpeg', 'image/png', 'image/webp', 'image/gif'):
+                        continue
+                    try:
+                        decoded = base64.b64decode(b64, validate=True)
+                    except Exception:
+                        continue
+                    if not decoded or len(decoded) > 6 * 1024 * 1024:
+                        continue
+                    imgs.append({'media_type': media_type, 'data': b64})
+            selected_brief = brief if data.get('usebrief') else None
+            blocker = _compose_preflight(data.get('topic', ''), selected_brief, imgs)
+            if blocker:
+                _log_event('compose.blocked', content_type=data.get('type', 'banger'), reason='insufficient_evidence',
+                           used_brief=bool(selected_brief), brief_status=(selected_brief or {}).get('research_status'),
+                           screenshots=len(imgs))
+                return self._send(200, json.dumps({'error': 'need_facts', 'message': blocker}), 'application/json')
             res = write_styled(data.get('topic', ''), data.get('type', 'banger'),
                                n=int(data.get('n', 3)),
-                               brief=(brief if data.get('usebrief') else None), voice=voice(),
+                               brief=selected_brief, voice=voice(),
                                images=imgs)
             _log_event('compose.completed', content_type=data.get('type', 'banger'), used_brief=bool(brief and data.get('usebrief')),
                        brief_status=(brief or {}).get('research_status'), result=res.get('error', 'ok'),

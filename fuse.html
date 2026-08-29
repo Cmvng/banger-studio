@@ -23,7 +23,7 @@
       rd.readAsDataURL(f);
     });
   }
-  function drawThumbs(){ window.__bwShots=shots.slice(); var t=$('bw_thumbs'); if(!t)return;
+  function drawThumbs(){ var t=$('bw_thumbs'); if(!t)return;
     t.innerHTML=shots.map(function(s,i){return '<div class="bw-th"><img src="'+s+'"><button type="button" class="bw-thx" data-i="'+i+'">&times;</button></div>';}).join('');
   }
   const TYPE_OPTS=[['deepdive','deep-dive'],['alpha','alpha / call'],['update','update'],['airdrop','airdrop / how-to'],['educational','educational'],['banger','banger'],['viral','viral'],['article','article']];
@@ -120,7 +120,7 @@
     $('bw_facts').innerHTML='<div class="bw-mut">gathering… opening the site, pulling numbers, reading X…</div>';
     try{
       const r=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:proj,root:root,session:BW_SESSION})});
-      const j=await r.json(); const b=j.brief||{}; window.__bwBrief=b; window.__bwHasBrief=true;
+      const j=await r.json(); const b=j.brief||{}; window.__bwHasBrief=true;
       const facts=Object.keys(b.live_numbers||{}).map(k=>'<div class="bw-f"><b>'+E(k)+'</b>'+E(b.live_numbers[k])+'</div>').join('')||'<div class="bw-mut">no live numbers found — type facts above.</div>';
       $('bw_facts').innerHTML='<div class="bw-ok" style="margin:2px 0 6px">✓ facts pulled · $0.00 · will be used in the write</div><div class="bw-facts">'+facts+'</div>';
     }catch(e){ $('bw_facts').innerHTML='<div class="bw-warn">could not gather. type facts above instead.</div>'; }
@@ -139,7 +139,7 @@
         var seg=u.pathname.split('/').filter(Boolean)[0]||'';
         var pj=$('bw_proj').value.trim()||seg||u.hostname.replace('www.','').split('.')[0];
         var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0],session:BW_SESSION})});
-        const gb=await rr.json(); window.__bwBrief=gb.brief||{}; window.__bwHasBrief=true;
+        await rr.json(); window.__bwHasBrief=true;
       }catch(e){}
     }
     $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">'+(shots.length?'reading your screenshot(s), then rewriting through the loop…':'writing '+n+' version(s) through the loop, then designing…')+'</div></div>';
@@ -271,14 +271,309 @@
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ if($('wscr')&&$('wscr').classList.contains('on'))mountIntoWriter(); },200); });
 })();
 </script>
+<script>
+(function () {
+  'use strict';
 
+  const VERSION = '5.0.0';
+  const DEFAULT_THEME = {
+    bg: '#EDF3FF', paper: '#FFFFFF', ink: '#101C33', blue: '#2E6BFF',
+    navy: '#123A9E', soft: '#BFD1F5', mint: '#68F0B2', gold: '#FFC53D',
+    coral: '#FF6C43', red: '#FF4D45', muted: '#61769D'
+  };
+
+  function fmt(input) {
+    const raw = Array.isArray(input) ? input : ['square', 1080, 1080];
+    return { id: raw[0] || 'square', w: Number(raw[1]) || 1080, h: Number(raw[2]) || 1080 };
+  }
+
+  function theme(input) { return Object.assign({}, DEFAULT_THEME, input || {}); }
+  function px(n) { return Math.round(n); }
+  function textLayer(text, x, y, w, size, color, font, weight, lineHeight, extra) {
+    return Object.assign({
+      type: 'text', text: text, x: px(x), y: px(y), w: px(w), size: px(size),
+      color: color, ff: font || 'Sora', fw: String(weight || 800),
+      lh: String(lineHeight || 1), pre: 1
+    }, extra || {});
+  }
+  function svgLayer(vb, inner, x, y, w, ar, extra) {
+    return Object.assign({
+      type: 'svgraw', vb: vb || '0 0 100 100', inner: inner,
+      x: px(x), y: px(y), w: px(w), ar: Number(ar) || 1
+    }, extra || {});
+  }
+  function panel(x, y, w, h, fill, radius, stroke, sw) {
+    return svgLayer('0 0 100 100', '<rect x="2" y="2" width="96" height="96" rx="' + (radius || 0) + '" fill="' + fill + '"' + (stroke ? ' stroke="' + stroke + '" stroke-width="' + (sw || 3) + '"' : '') + '/>', x, y, w, h / Math.max(1, w));
+  }
+  function line(x, y, w, h, color, sw, dash) {
+    return svgLayer('0 0 100 20', '<path d="M3 10H97" fill="none" stroke="' + color + '" stroke-width="' + (sw || 5) + '" stroke-linecap="round"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>', x, y, w, h / Math.max(1, w));
+  }
+  function safeClone(value) {
+    if (Array.isArray(value)) return value.map(safeClone);
+    if (value && typeof value === 'object') {
+      const copy = {};
+      Object.keys(value).forEach(function (key) { copy[key] = safeClone(value[key]); });
+      return copy;
+    }
+    return value;
+  }
+
+  function character(def) {
+    const body = def.body || '<path d="M20 140V110Q28 91 60 91Q92 91 100 110V140Z" fill="#2E6BFF"/>';
+    const face = def.face || '<circle cx="60" cy="56" r="31" fill="#B8734F"/><circle cx="49" cy="57" r="3" fill="#101C33"/><circle cx="70" cy="57" r="3" fill="#101C33"/><path d="M50 71Q60 78 70 71" fill="none" stroke="#101C33" stroke-width="3" stroke-linecap="round"/>';
+    return {
+      id: def.id, name: def.name, category: def.category, tags: def.tags,
+      note: def.note, vb: '0 0 120 140', ar: 140 / 120,
+      inner: '<g stroke-linejoin="round">' + (def.back || '') + body + face + (def.hair || '') + (def.pose || '') + (def.prop || '') + (def.front || '') + '</g>'
+    };
+  }
+
+  const characters = [
+    character({id:'source-detective',name:'Source Detective',category:'research',tags:['evidence','magnifier','investigation'],note:'Leans into a source with an oversized magnifier.',hair:'<path d="M30 52Q31 20 61 19Q89 20 91 51Q73 35 30 52Z" fill="#101C33"/>',body:'<path d="M16 140V111Q24 91 58 91Q88 91 99 111V140Z" fill="#123A9E"/>',pose:'<path d="M30 103Q14 104 13 124" fill="none" stroke="#B8734F" stroke-width="12" stroke-linecap="round"/>',prop:'<circle cx="92" cy="88" r="19" fill="#EDF3FF" fill-opacity=".72" stroke="#2E6BFF" stroke-width="7"/><path d="M105 103L117 117" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round"/>'}),
+    character({id:'field-writer',name:'Field Writer',category:'writing',tags:['notebook','pen','reporter'],note:'Captures a live observation in a pocket notebook.',face:'<circle cx="60" cy="55" r="30" fill="#8B5B3F"/><circle cx="49" cy="56" r="3" fill="#101C33"/><circle cx="70" cy="56" r="3" fill="#101C33"/><path d="M51 70Q60 74 69 70" fill="none" stroke="#101C33" stroke-width="3"/>',hair:'<path d="M30 50Q25 20 60 17Q91 20 90 51L76 35Q58 43 30 50Z" fill="#101C33"/>',body:'<path d="M16 140L22 105Q31 91 60 91Q89 91 98 105L104 140Z" fill="#2E6BFF"/>',prop:'<rect x="15" y="105" width="48" height="31" rx="5" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><path d="M58 126L100 91" stroke="#FFC53D" stroke-width="7" stroke-linecap="round"/><path d="M98 89L108 84L104 95Z" fill="#101C33"/>'}),
+    character({id:'chart-analyst',name:'Chart Analyst',category:'data',tags:['chart','glasses','metrics'],note:'Presents a verified chart instead of a vague claim.',hair:'<path d="M31 48Q35 18 61 18Q88 18 91 50Q69 32 31 48Z" fill="#4B2D24"/>',body:'<path d="M17 140L21 108Q31 91 60 91Q88 91 101 108L104 140Z" fill="#101C33"/>',front:'<rect x="72" y="98" width="43" height="34" rx="5" fill="#FFFFFF" stroke="#123A9E" stroke-width="3"/><path d="M78 124L86 116L93 120L108 105" fill="none" stroke="#18B27B" stroke-width="5" stroke-linecap="round"/><rect x="37" y="51" width="19" height="13" rx="5" fill="none" stroke="#2E6BFF" stroke-width="4"/><rect x="65" y="51" width="19" height="13" rx="5" fill="none" stroke="#2E6BFF" stroke-width="4"/><path d="M56 57H65" stroke="#2E6BFF" stroke-width="4"/>'}),
+    character({id:'product-builder',name:'Product Builder',category:'product',tags:['wrench','maker','shipping'],note:'Carries a wrench and a finished product block.',hair:'<path d="M31 48Q35 18 60 18Q85 18 90 48Z" fill="#2E6BFF"/><rect x="25" y="43" width="70" height="10" rx="5" fill="#123A9E"/>',body:'<path d="M16 140V108Q26 91 60 91Q94 91 104 108V140Z" fill="#FFC53D"/>',prop:'<path d="M83 96L110 123M102 91L114 103L92 125L80 113Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><rect x="16" y="108" width="27" height="27" rx="4" fill="#2E6BFF" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'launch-pilot',name:'Launch Pilot',category:'launch',tags:['helmet','launch','future'],note:'A launch-ready pilot with visor reflections and controls.',back:'<circle cx="60" cy="56" r="40" fill="#EDF3FF" stroke="#123A9E" stroke-width="5"/>',face:'<ellipse cx="60" cy="57" rx="28" ry="23" fill="#071124"/><path d="M36 57Q60 35 84 56" fill="none" stroke="#78A1FF" stroke-width="5"/><circle cx="50" cy="61" r="3" fill="#68F0B2"/><circle cx="70" cy="61" r="3" fill="#68F0B2"/>',body:'<path d="M17 140V107Q27 88 60 88Q93 88 103 107V140Z" fill="#FFFFFF" stroke="#123A9E" stroke-width="4"/>',front:'<rect x="43" y="107" width="35" height="23" rx="6" fill="#2E6BFF"/><circle cx="52" cy="118" r="3" fill="#68F0B2"/><circle cx="66" cy="118" r="3" fill="#FFC53D"/>'}),
+    character({id:'signal-anon',name:'Signal Anon',category:'culture',tags:['hood','onchain','signal'],note:'A hooded onchain observer with a live pulse.',back:'<path d="M60 11Q25 14 19 58Q19 85 40 96H80Q101 85 101 58Q95 14 60 11Z" fill="#123A9E"/>',face:'<ellipse cx="60" cy="60" rx="29" ry="25" fill="#071124"/><circle cx="49" cy="60" r="4" fill="#68F0B2"/><circle cx="71" cy="60" r="4" fill="#68F0B2"/><path d="M46 76H74" stroke="#78A1FF" stroke-width="3" stroke-linecap="round"/>',body:'<path d="M14 140L20 105Q29 89 60 89Q91 89 100 105L106 140Z" fill="#101C33"/>',front:'<path d="M28 121H43L49 109L58 132L67 114L74 121H94" fill="none" stroke="#68F0B2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    character({id:'timeline-reporter',name:'Timeline Reporter',category:'social',tags:['microphone','news','update'],note:'Reports a breaking project update from the timeline.',hair:'<path d="M29 50Q28 20 58 17Q87 18 92 48L80 33L66 38L51 29L36 42Z" fill="#101C33"/>',body:'<path d="M17 140V108Q27 91 60 91Q93 91 103 108V140Z" fill="#FF6C43"/>',pose:'<path d="M86 103Q102 107 106 124" fill="none" stroke="#B8734F" stroke-width="12" stroke-linecap="round"/>',prop:'<rect x="91" y="85" width="15" height="39" rx="8" fill="#123A9E"/><circle cx="99" cy="84" r="13" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><path d="M92 100H106" stroke="#68F0B2" stroke-width="4"/>'}),
+    character({id:'protocol-engineer',name:'Protocol Engineer',category:'product',tags:['code','terminal','engineering'],note:'Works behind a terminal with live protocol nodes.',hair:'<path d="M30 50Q35 18 60 18Q84 18 91 48L78 31L65 38L51 28L37 42Z" fill="#101C33"/>',body:'<path d="M15 140V108Q27 91 60 91Q94 91 105 108V140Z" fill="#18B27B"/>',front:'<rect x="18" y="104" width="87" height="36" rx="5" fill="#071124" stroke="#2E6BFF" stroke-width="4"/><path d="M31 119L39 126L31 133M47 133H62" fill="none" stroke="#68F0B2" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="88" cy="121" r="5" fill="#FFC53D"/>'}),
+    character({id:'conviction-holder',name:'Conviction Holder',category:'opinion',tags:['calm','diamond hands','thinking'],note:'A quiet high-conviction pose with folded arms.',hair:'<path d="M28 49Q31 16 59 16Q88 17 92 50Q72 30 28 49Z" fill="#101C33"/>',body:'<path d="M16 140V108Q27 91 60 91Q93 91 104 108V140Z" fill="#18B27B"/>',pose:'<path d="M27 111Q60 135 93 111M27 127Q60 103 93 127" fill="none" stroke="#B8734F" stroke-width="12" stroke-linecap="round"/><path d="M42 59Q48 54 54 59M66 59Q72 54 78 59M51 73Q60 78 69 73" fill="none" stroke="#101C33" stroke-width="3" stroke-linecap="round"/>'}),
+    character({id:'community-host',name:'Community Host',category:'community',tags:['megaphone','community','spaces'],note:'Invites the community into a live conversation.',hair:'<path d="M28 49Q30 18 59 17Q89 18 92 49L82 33L67 39L52 29L37 42Z" fill="#4B2D24"/>',body:'<path d="M16 140L21 107Q30 91 60 91Q90 91 100 107L105 140Z" fill="#8C5CFF"/>',prop:'<path d="M82 96L113 82V116L82 105Z" fill="#FFC53D" stroke="#101C33" stroke-width="4"/><rect x="72" y="96" width="15" height="12" rx="3" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><path d="M89 110L96 130" stroke="#101C33" stroke-width="7" stroke-linecap="round"/>'}),
+    character({id:'receipts-archivist',name:'Receipts Archivist',category:'research',tags:['archive','receipts','files'],note:'Pulls a verified receipt from a color-coded archive.',hair:'<path d="M30 49Q35 17 60 17Q85 17 90 49Q73 35 30 49Z" fill="#6E3B2A"/>',body:'<path d="M15 140V106Q27 91 60 91Q93 91 105 106V140Z" fill="#123A9E"/>',front:'<rect x="12" y="106" width="45" height="31" rx="4" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><path d="M19 116H48M19 124H43M19 132H37" stroke="#2E6BFF" stroke-width="3"/><rect x="79" y="101" width="31" height="36" rx="3" fill="#FFC53D" stroke="#101C33" stroke-width="3"/><path d="M85 110H104M85 118H102" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'market-mapper',name:'Market Mapper',category:'strategy',tags:['map','ecosystem','nodes'],note:'Maps projects and relationships across an ecosystem.',hair:'<path d="M28 48Q32 17 60 17Q87 17 92 49L79 33Q58 44 28 48Z" fill="#101C33"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#00A99A"/>',front:'<path d="M13 109L43 100L70 111L107 98V137L72 140L43 130L13 139Z" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><circle cx="33" cy="119" r="5" fill="#2E6BFF"/><circle cx="63" cy="125" r="5" fill="#FF6C43"/><circle cx="92" cy="112" r="5" fill="#18B27B"/><path d="M37 120L58 124M68 122L87 114" stroke="#61769D" stroke-width="3"/>'}),
+    character({id:'skeptical-reviewer',name:'Skeptical Reviewer',category:'opinion',tags:['review','skeptic','red flag'],note:'Raises an eyebrow and flags a claim that needs proof.',hair:'<path d="M29 50Q31 19 59 17Q87 18 92 48L78 34L62 40L47 29L34 43Z" fill="#101C33"/>',body:'<path d="M16 140L21 107Q30 91 60 91Q90 91 100 107L105 140Z" fill="#FF4D45"/>',front:'<path d="M42 54L54 50M66 50L79 55M52 73Q60 69 68 73" fill="none" stroke="#101C33" stroke-width="4" stroke-linecap="round"/><path d="M88 95V130" stroke="#101C33" stroke-width="5"/><path d="M90 96L116 105L90 115Z" fill="#FFC53D" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'founder-pitch',name:'Founder Pitch',category:'business',tags:['founder','pitch','vision'],note:'Explains the product with a simple three-point board.',hair:'<path d="M31 49Q34 17 60 17Q86 17 91 49Q71 34 31 49Z" fill="#4B2D24"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#101C33"/>',prop:'<rect x="78" y="88" width="39" height="48" rx="5" fill="#EDF3FF" stroke="#2E6BFF" stroke-width="4"/><circle cx="88" cy="101" r="4" fill="#2E6BFF"/><circle cx="88" cy="113" r="4" fill="#18B27B"/><circle cx="88" cy="125" r="4" fill="#FFC53D"/><path d="M96 101H110M96 113H110M96 125H110" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'token-economist',name:'Token Economist',category:'data',tags:['tokenomics','supply','pie'],note:'Explains token distribution with a segmented wheel.',hair:'<path d="M30 48Q35 17 60 17Q84 17 91 48Z" fill="#101C33"/>',body:'<path d="M15 140V107Q26 91 60 91Q94 91 105 107V140Z" fill="#F3EEE5" stroke="#101C33" stroke-width="3"/>',prop:'<circle cx="94" cy="108" r="25" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><path d="M94 108V83A25 25 0 0 1 117 119Z" fill="#68F0B2"/><path d="M94 108L117 119A25 25 0 0 1 76 126Z" fill="#FFC53D"/><circle cx="94" cy="108" r="8" fill="#FFFFFF"/>'}),
+    character({id:'security-auditor',name:'Security Auditor',category:'risk',tags:['shield','audit','security'],note:'Protects a product claim with a checked audit shield.',hair:'<path d="M30 49Q34 17 60 17Q86 17 91 49L78 34Q60 42 30 49Z" fill="#101C33"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#123A9E"/>',prop:'<path d="M93 88L115 96V112Q115 129 93 137Q71 129 71 112V96Z" fill="#68F0B2" stroke="#101C33" stroke-width="4"/><path d="M82 111L90 119L104 102" fill="none" stroke="#101C33" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    character({id:'growth-operator',name:'Growth Operator',category:'strategy',tags:['growth','ladder','experiment'],note:'Climbs an experiment ladder instead of chasing vanity.',hair:'<path d="M30 49Q34 17 60 17Q85 17 91 49Q73 35 30 49Z" fill="#101C33"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#FF6C43"/>',prop:'<path d="M85 90V137M112 90V137M85 100H112M85 114H112M85 128H112" stroke="#101C33" stroke-width="5" stroke-linecap="round"/><path d="M78 105Q90 99 94 92" fill="none" stroke="#B8734F" stroke-width="10" stroke-linecap="round"/>'}),
+    character({id:'data-curator',name:'Data Curator',category:'data',tags:['database','filter','quality'],note:'Filters noisy inputs into a clean verified record.',hair:'<path d="M30 48Q35 17 60 17Q86 17 91 49L79 33L65 39L49 30L35 43Z" fill="#4B2D24"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#8C5CFF"/>',prop:'<path d="M75 92H116L101 109V130L90 135V109Z" fill="#EDF3FF" stroke="#101C33" stroke-width="4"/><ellipse cx="27" cy="111" rx="17" ry="7" fill="#2E6BFF"/><path d="M10 111V130C10 139 44 139 44 130V111M10 121C10 130 44 130 44 121" fill="#BFD1F5" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'thread-strategist',name:'Thread Strategist',category:'writing',tags:['thread','sequence','cards'],note:'Arranges a story into a clean three-card sequence.',hair:'<path d="M29 49Q33 17 60 17Q87 17 92 49L79 33Q59 42 29 49Z" fill="#101C33"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#2E6BFF"/>',front:'<rect x="75" y="89" width="34" height="20" rx="4" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><rect x="69" y="108" width="34" height="20" rx="4" fill="#BFD1F5" stroke="#101C33" stroke-width="3"/><rect x="77" y="126" width="34" height="12" rx="4" fill="#FFC53D" stroke="#101C33" stroke-width="3"/><text x="83" y="103" font-size="9" font-family="monospace" fill="#101C33">01</text><text x="77" y="122" font-size="9" font-family="monospace" fill="#101C33">02</text>'}),
+    character({id:'visual-director',name:'Visual Director',category:'design',tags:['frame','composition','art'],note:'Frames the strongest focal point with both hands.',hair:'<path d="M29 50Q31 18 60 17Q89 18 92 50L79 32L65 39L49 29L34 43Z" fill="#101C33"/>',body:'<path d="M15 140V108Q27 91 60 91Q93 91 105 108V140Z" fill="#FFC53D"/>',pose:'<path d="M23 106L10 96V78H30M97 106L110 96V78H90" fill="none" stroke="#B8734F" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>',prop:'<path d="M14 73V58H31M106 73V58H89M14 41V26H31M106 41V26H89" fill="none" stroke="#2E6BFF" stroke-width="5" stroke-linecap="round"/>'}),
+    character({id:'meme-alchemist',name:'Meme Alchemist',category:'culture',tags:['meme','flask','culture'],note:'Mixes insight and internet culture in one weird flask.',hair:'<path d="M29 50Q32 16 59 16Q88 17 92 50L81 34L67 39L52 28L36 43Z" fill="#101C33"/>',body:'<path d="M15 140V108Q27 91 60 91Q93 91 105 108V140Z" fill="#D8FF47"/>',prop:'<path d="M88 88V105L75 129Q72 137 83 139H111Q121 137 117 129L103 105V88" fill="#EDF3FF" stroke="#101C33" stroke-width="4"/><path d="M80 124Q96 114 113 126L117 135H76Z" fill="#8C5CFF"/><circle cx="95" cy="120" r="4" fill="#68F0B2"/><circle cx="106" cy="128" r="3" fill="#FFC53D"/>'}),
+    character({id:'dao-facilitator',name:'DAO Facilitator',category:'community',tags:['governance','vote','people'],note:'Turns scattered opinions into a clear community vote.',hair:'<path d="M29 50Q32 17 60 17Q88 17 92 50Q72 31 29 50Z" fill="#4B2D24"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#00A99A"/>',front:'<rect x="73" y="97" width="43" height="39" rx="5" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><rect x="81" y="105" width="8" height="8" fill="none" stroke="#2E6BFF" stroke-width="3"/><path d="M82 108L85 111L91 103" fill="none" stroke="#18B27B" stroke-width="3"/><path d="M95 109H109M81 123H89M95 123H109" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'ecosystem-scout',name:'Ecosystem Scout',category:'research',tags:['binoculars','discovery','ecosystem'],note:'Scans for overlooked products beyond the obvious narrative.',hair:'<path d="M30 49Q34 17 60 17Q86 17 91 49L78 33Q58 43 30 49Z" fill="#101C33"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#18B27B"/>',prop:'<path d="M35 52L30 74H50L54 57M85 52L90 74H70L66 57M50 66H70" fill="#123A9E" stroke="#101C33" stroke-width="4"/><circle cx="40" cy="65" r="10" fill="#78A1FF"/><circle cx="80" cy="65" r="10" fill="#78A1FF"/><path d="M28 101L9 119M92 101L111 119" stroke="#B8734F" stroke-width="10" stroke-linecap="round"/>'}),
+    character({id:'night-researcher',name:'Night Researcher',category:'research',tags:['night','coffee','deep work'],note:'A late-night desk researcher surrounded by source notes.',hair:'<path d="M29 50Q33 17 60 17Q87 17 92 50L79 33Q58 42 29 50Z" fill="#101C33"/>',body:'<path d="M15 140V107Q27 91 60 91Q93 91 105 107V140Z" fill="#071124"/>',front:'<rect x="10" y="109" width="72" height="31" rx="5" fill="#123A9E" stroke="#2E6BFF" stroke-width="3"/><path d="M23 123L31 130L23 137M39 137H54" fill="none" stroke="#68F0B2" stroke-width="4"/><path d="M91 113H112V128Q112 138 102 138H96Q91 138 91 132Z" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><path d="M112 118Q121 118 118 129Q116 134 111 132" fill="none" stroke="#101C33" stroke-width="3"/>'}),
+    character({id:'contrarian-debater',name:'Contrarian Debater',category:'opinion',tags:['debate','counterpoint','versus'],note:'Makes a sharp counterpoint with an open-hand debate pose.',hair:'<path d="M29 50Q31 18 59 17Q88 18 92 50L80 33L66 40L51 29L35 43Z" fill="#101C33"/>',body:'<path d="M15 140V108Q27 91 60 91Q93 91 105 108V140Z" fill="#FF6C43"/>',pose:'<path d="M25 108Q13 100 8 84M95 107Q108 100 114 88" fill="none" stroke="#B8734F" stroke-width="11" stroke-linecap="round"/><path d="M7 84L4 70M8 84L19 74M113 88L117 75M113 88L103 77" stroke="#B8734F" stroke-width="5" stroke-linecap="round"/>',front:'<path d="M45 55L55 51M65 51L76 55M50 73Q60 69 70 73" fill="none" stroke="#101C33" stroke-width="4" stroke-linecap="round"/>'}),
+    character({id:'ship-day-creator',name:'Ship Day Creator',category:'launch',tags:['celebrate','ship','confetti'],note:'Celebrates a real shipped release with both arms raised.',hair:'<path d="M30 50Q33 16 60 16Q87 16 91 50L79 31L66 39L51 28L35 43Z" fill="#101C33"/>',body:'<path d="M16 140V108Q27 91 60 91Q93 91 104 108V140Z" fill="#2E6BFF"/>',pose:'<path d="M26 109L8 74M94 109L112 74" fill="none" stroke="#8B5B3F" stroke-width="12" stroke-linecap="round"/><path d="M7 74L4 59M8 74L20 64M113 74L116 59M112 74L100 64" stroke="#8B5B3F" stroke-width="5" stroke-linecap="round"/>',front:'<path d="M46 57L52 53M68 53L74 57M49 70Q60 82 71 70" fill="none" stroke="#101C33" stroke-width="4" stroke-linecap="round"/><path d="M14 26L18 36M103 22L99 34M13 45L25 47M96 43L110 46" stroke="#FFC53D" stroke-width="5"/>'})
+  ];
+
+  function doodle(def) {
+    return {id:def.id,name:def.name,category:def.category,tags:def.tags,note:def.note || 'Editable native vector.',vb:def.vb || '0 0 100 100',ar:def.ar || 1,inner:def.inner};
+  }
+
+  const doodles = [
+    doodle({id:'arrow-hook',name:'Hook Arrow',category:'annotation',tags:['arrow','hook','point'],inner:'<path d="M14 18Q88 14 70 72Q62 91 31 73" fill="none" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round"/><path d="M37 61L28 74L42 82" fill="none" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'arrow-loop',name:'Loopback Arrow',category:'annotation',tags:['arrow','loop','return'],inner:'<path d="M77 24Q35 5 18 38Q5 69 42 83Q74 95 88 64" fill="none" stroke="#123A9E" stroke-width="7" stroke-linecap="round"/><path d="M76 64L89 64L88 77" fill="none" stroke="#123A9E" stroke-width="7" stroke-linecap="round"/>'}),
+    doodle({id:'arrow-zigzag',name:'Zigzag Arrow',category:'annotation',tags:['arrow','zigzag','movement'],vb:'0 0 160 80',ar:.5,inner:'<path d="M8 67L45 19L77 59L111 16L149 49" fill="none" stroke="#FF6C43" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="M137 47L152 50L147 64" fill="none" stroke="#FF6C43" stroke-width="8" stroke-linecap="round"/>'}),
+    doodle({id:'arrow-double',name:'Double Direction',category:'annotation',tags:['arrow','versus','direction'],vb:'0 0 160 60',ar:.375,inner:'<path d="M14 18H145M14 43H145" stroke="#101C33" stroke-width="7" stroke-linecap="round"/><path d="M26 7L12 18L26 29M133 32L148 43L133 54" fill="none" stroke="#2E6BFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'underline-swoop',name:'Swoop Underline',category:'annotation',tags:['underline','emphasis','marker'],vb:'0 0 180 45',ar:.25,inner:'<path d="M7 27Q70 11 170 20Q93 23 21 36" fill="none" stroke="#2E6BFF" stroke-width="9" stroke-linecap="round" opacity=".9"/>'}),
+    doodle({id:'underline-double',name:'Double Underline',category:'annotation',tags:['underline','double','emphasis'],vb:'0 0 180 55',ar:.306,inner:'<path d="M8 20Q90 8 171 17M18 42Q92 30 161 38" fill="none" stroke="#FFC53D" stroke-width="7" stroke-linecap="round"/>'}),
+    doodle({id:'circle-hand',name:'Hand Circle',category:'annotation',tags:['circle','focus','handdrawn'],inner:'<path d="M80 21Q48 1 19 28Q-1 51 21 79Q47 103 78 83Q101 64 86 34Q70 8 34 17Q8 26 14 59" fill="none" stroke="#FF4D45" stroke-width="7" stroke-linecap="round"/>'}),
+    doodle({id:'focus-brackets',name:'Focus Brackets',category:'annotation',tags:['brackets','focus','frame'],vb:'0 0 120 100',ar:.833,inner:'<path d="M42 10H12V39M78 10H108V39M42 90H12V61M78 90H108V61" fill="none" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'marker-swipe',name:'Marker Swipe',category:'annotation',tags:['highlight','marker','swipe'],vb:'0 0 180 60',ar:.333,inner:'<path d="M9 37Q47 8 170 20L162 46Q79 35 17 53Z" fill="#FFC53D" opacity=".78"/><path d="M15 42Q82 18 165 26" fill="none" stroke="#FFF4B6" stroke-width="5" opacity=".7"/>'}),
+    doodle({id:'scribble-cloud',name:'Scribble Cloud',category:'annotation',tags:['scribble','mess','idea'],vb:'0 0 170 95',ar:.559,inner:'<path d="M8 54Q26 10 52 68Q70 4 86 68Q105 5 118 66Q143 10 163 51Q139 91 104 71Q74 101 51 72Q22 94 8 54Z" fill="none" stroke="#123A9E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'speed-burst',name:'Speed Burst',category:'motion',tags:['speed','motion','lines'],vb:'0 0 180 100',ar:.556,inner:'<path d="M8 18H106M31 49H171M8 81H129" stroke="#101C33" stroke-width="8" stroke-linecap="round"/><path d="M121 18H164M8 49H18M145 81H174" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round"/>'}),
+    doodle({id:'shock-rays',name:'Shock Rays',category:'motion',tags:['rays','impact','shock'],inner:'<path d="M50 5V27M50 73V95M5 50H27M73 50H95M17 17L32 32M68 68L83 83M83 17L68 32M32 68L17 83" stroke="#FFC53D" stroke-width="7" stroke-linecap="round"/><circle cx="50" cy="50" r="10" fill="#FF6C43"/>'}),
+    doodle({id:'comet-trail',name:'Comet Trail',category:'motion',tags:['comet','trail','launch'],vb:'0 0 180 100',ar:.556,inner:'<path d="M10 82Q74 73 121 31" fill="none" stroke="#BFD1F5" stroke-width="18" stroke-linecap="round"/><path d="M18 83Q82 67 128 26" fill="none" stroke="#2E6BFF" stroke-width="6" stroke-linecap="round"/><circle cx="145" cy="21" r="18" fill="#FFC53D" stroke="#101C33" stroke-width="5"/>'}),
+    doodle({id:'double-orbit',name:'Double Orbit',category:'motion',tags:['orbit','protocol','network'],vb:'0 0 180 100',ar:.556,inner:'<ellipse cx="90" cy="50" rx="78" ry="28" transform="rotate(-8 90 50)" fill="none" stroke="#123A9E" stroke-width="5"/><ellipse cx="90" cy="50" rx="62" ry="42" transform="rotate(13 90 50)" fill="none" stroke="#78A1FF" stroke-width="4"/><circle cx="151" cy="28" r="8" fill="#68F0B2"/>'}),
+    doodle({id:'spark-cluster',name:'Spark Cluster',category:'motion',tags:['spark','magic','energy'],inner:'<path d="M48 5L56 37L87 23L67 49L95 61L62 63L68 95L49 69L26 91L37 61L5 54L38 48L21 18L46 37Z" fill="#FFC53D" stroke="#101C33" stroke-width="3"/><circle cx="50" cy="53" r="8" fill="#FFFFFF"/>'}),
+    doodle({id:'confetti-pop',name:'Confetti Pop',category:'motion',tags:['confetti','celebrate','launch'],inner:'<path d="M38 58L58 89L76 50Z" fill="#2E6BFF" stroke="#101C33" stroke-width="3"/><path d="M49 54Q37 20 15 19M59 48Q61 15 80 9M68 56Q91 34 96 42" fill="none" stroke="#FF6C43" stroke-width="5" stroke-linecap="round"/><rect x="18" y="42" width="10" height="6" transform="rotate(28 18 42)" fill="#68F0B2"/><rect x="75" y="24" width="9" height="6" transform="rotate(-22 75 24)" fill="#FFC53D"/><circle cx="90" cy="67" r="5" fill="#8C5CFF"/>'}),
+    doodle({id:'bounce-arc',name:'Bounce Arc',category:'motion',tags:['bounce','trajectory','steps'],vb:'0 0 180 95',ar:.528,inner:'<path d="M10 76Q37 12 64 76Q91 12 118 76Q143 22 170 64" fill="none" stroke="#2E6BFF" stroke-width="7" stroke-linecap="round" stroke-dasharray="12 10"/><circle cx="169" cy="64" r="9" fill="#FFC53D"/>'}),
+    doodle({id:'signal-ripple',name:'Signal Ripple',category:'motion',tags:['signal','ripple','broadcast'],inner:'<circle cx="50" cy="50" r="8" fill="#2E6BFF"/><path d="M34 34Q18 50 34 66M66 34Q82 50 66 66M23 23Q-2 50 23 77M77 23Q102 50 77 77" fill="none" stroke="#123A9E" stroke-width="6" stroke-linecap="round"/>'}),
+    doodle({id:'verified-badge',name:'Verified Badge',category:'badge',tags:['verified','check','proof'],inner:'<path d="M50 5L62 15L78 12L84 27L95 37L89 52L93 68L78 76L69 91L52 87L36 95L25 82L8 77L10 60L4 46L16 34L20 18L37 17Z" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><path d="M29 51L44 66L72 36" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'proof-stamp',name:'Proof Stamp',category:'badge',tags:['proof','stamp','receipt'],inner:'<circle cx="50" cy="50" r="43" fill="#EDF3FF" stroke="#FF4D45" stroke-width="6"/><circle cx="50" cy="50" r="32" fill="none" stroke="#FF4D45" stroke-width="3" stroke-dasharray="5 5"/><path d="M28 53L43 67L72 33" fill="none" stroke="#FF4D45" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'starburst-label',name:'Starburst Label',category:'badge',tags:['starburst','sticker','label'],inner:'<path d="M50 4L61 18L78 12L80 31L96 40L85 55L92 72L73 77L66 94L50 84L34 94L27 77L8 72L15 55L4 40L20 31L22 12L39 18Z" fill="#FFC53D" stroke="#101C33" stroke-width="4"/><circle cx="50" cy="50" r="10" fill="#101C33"/>'}),
+    doodle({id:'hot-signal',name:'Hot Signal',category:'badge',tags:['hot','flame','signal'],inner:'<path d="M55 5Q70 31 56 43Q58 23 44 16Q43 36 29 50Q11 69 31 88Q52 107 75 88Q97 67 79 43Q76 63 64 67Q72 42 55 5Z" fill="#FF6C43" stroke="#101C33" stroke-width="4"/><path d="M51 53Q64 67 52 85Q40 78 41 68Q42 59 51 53Z" fill="#FFC53D"/>'}),
+    doodle({id:'alpha-eye',name:'Alpha Eye',category:'badge',tags:['alpha','eye','insight'],vb:'0 0 140 80',ar:.571,inner:'<path d="M6 40Q35 5 70 5Q105 5 134 40Q105 75 70 75Q35 75 6 40Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><circle cx="70" cy="40" r="22" fill="#2E6BFF"/><circle cx="70" cy="40" r="8" fill="#101C33"/><circle cx="62" cy="31" r="5" fill="#FFFFFF"/>'}),
+    doodle({id:'diamond-hands',name:'Diamond Mark',category:'badge',tags:['diamond','conviction','hold'],inner:'<path d="M21 31L35 12H66L82 31L51 90Z" fill="#BFD1F5" stroke="#123A9E" stroke-width="5"/><path d="M21 31H82M35 12L42 31L51 90L61 31L66 12" fill="none" stroke="#2E6BFF" stroke-width="4"/>'}),
+    doodle({id:'radar-target',name:'Radar Target',category:'badge',tags:['target','radar','focus'],inner:'<circle cx="50" cy="50" r="43" fill="none" stroke="#BFD1F5" stroke-width="5"/><circle cx="50" cy="50" r="27" fill="none" stroke="#2E6BFF" stroke-width="5"/><circle cx="50" cy="50" r="10" fill="#FF4D45"/><path d="M50 2V23M50 77V98M2 50H23M77 50H98" stroke="#101C33" stroke-width="5"/>'}),
+    doodle({id:'signal-crown',name:'Signal Crown',category:'badge',tags:['crown','winner','top'],vb:'0 0 130 90',ar:.692,inner:'<path d="M12 22L37 49L65 12L93 49L118 22L108 76H22Z" fill="#FFC53D" stroke="#101C33" stroke-width="5" stroke-linejoin="round"/><circle cx="12" cy="20" r="7" fill="#2E6BFF"/><circle cx="65" cy="10" r="7" fill="#FF6C43"/><circle cx="118" cy="20" r="7" fill="#68F0B2"/>'}),
+    doodle({id:'chart-up',name:'Uptrend Chart',category:'data',tags:['chart','growth','metrics'],vb:'0 0 160 90',ar:.563,inner:'<path d="M9 78H151M14 72L47 55L75 63L105 34L129 42L151 13" fill="none" stroke="#101C33" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M136 11L153 11L151 28" fill="none" stroke="#18B27B" stroke-width="7" stroke-linecap="round"/>'}),
+    doodle({id:'bar-stack',name:'Stacked Bars',category:'data',tags:['bars','comparison','data'],vb:'0 0 150 100',ar:.667,inner:'<rect x="11" y="64" width="24" height="27" rx="4" fill="#BFD1F5"/><rect x="45" y="43" width="24" height="48" rx="4" fill="#2E6BFF"/><rect x="79" y="20" width="24" height="71" rx="4" fill="#123A9E"/><rect x="113" y="8" width="24" height="83" rx="4" fill="#68F0B2"/><path d="M5 92H144" stroke="#101C33" stroke-width="4"/>'}),
+    doodle({id:'pie-slice',name:'Data Wheel',category:'data',tags:['pie','allocation','tokenomics'],inner:'<circle cx="50" cy="50" r="43" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><path d="M50 50V7A43 43 0 0 1 90 66Z" fill="#68F0B2"/><path d="M50 50L90 66A43 43 0 0 1 23 83Z" fill="#FFC53D"/><circle cx="50" cy="50" r="17" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/>'}),
+    doodle({id:'node-map',name:'Node Map',category:'data',tags:['nodes','network','map'],vb:'0 0 160 100',ar:.625,inner:'<path d="M25 25L77 47L128 18M77 47L42 82M77 47L128 76M128 18L128 76" stroke="#61769D" stroke-width="5"/><circle cx="25" cy="25" r="12" fill="#2E6BFF"/><circle cx="77" cy="47" r="17" fill="#123A9E"/><circle cx="128" cy="18" r="11" fill="#68F0B2"/><circle cx="42" cy="82" r="10" fill="#FFC53D"/><circle cx="128" cy="76" r="13" fill="#FF6C43"/>'}),
+    doodle({id:'data-funnel',name:'Data Funnel',category:'data',tags:['funnel','filter','research'],vb:'0 0 140 100',ar:.714,inner:'<path d="M9 9H131L90 53V83L50 94V53Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><path d="M24 25H116M38 41H102M52 57H88" stroke="#2E6BFF" stroke-width="5" stroke-linecap="round"/>'}),
+    doodle({id:'pulse-line',name:'Live Pulse',category:'data',tags:['pulse','live','signal'],vb:'0 0 180 70',ar:.389,inner:'<path d="M7 39H47L58 13L75 59L91 26L104 40H173" fill="none" stroke="#18B27B" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="172" cy="40" r="8" fill="#2E6BFF"/>'}),
+    doodle({id:'metric-grid',name:'Metric Grid',category:'data',tags:['grid','dashboard','matrix'],inner:'<rect x="7" y="7" width="38" height="38" rx="6" fill="#2E6BFF"/><rect x="55" y="7" width="38" height="38" rx="6" fill="#BFD1F5"/><rect x="7" y="55" width="38" height="38" rx="6" fill="#FFC53D"/><rect x="55" y="55" width="38" height="38" rx="6" fill="#18B27B"/><path d="M17 34L26 24L34 29L39 17M65 32H84M65 23H77" fill="none" stroke="#101C33" stroke-width="4" stroke-linecap="round"/>'}),
+    doodle({id:'proof-meter',name:'Proof Meter',category:'data',tags:['meter','score','proof'],vb:'0 0 160 95',ar:.594,inner:'<path d="M19 78A62 62 0 0 1 141 78" fill="none" stroke="#BFD1F5" stroke-width="16" stroke-linecap="round"/><path d="M19 78A62 62 0 0 1 113 25" fill="none" stroke="#2E6BFF" stroke-width="16" stroke-linecap="round"/><path d="M80 78L112 40" stroke="#101C33" stroke-width="7" stroke-linecap="round"/><circle cx="80" cy="78" r="10" fill="#101C33"/>'}),
+    doodle({id:'block-cube',name:'Protocol Block',category:'onchain',tags:['block','cube','chain'],inner:'<path d="M50 6L91 29V72L50 95L9 72V29Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><path d="M9 29L50 53L91 29M50 53V95" fill="none" stroke="#2E6BFF" stroke-width="5"/><path d="M28 19L70 42" stroke="#68F0B2" stroke-width="5"/>'}),
+    doodle({id:'wallet-card',name:'Wallet Card',category:'onchain',tags:['wallet','crypto','account'],vb:'0 0 150 100',ar:.667,inner:'<rect x="8" y="17" width="134" height="74" rx="14" fill="#123A9E" stroke="#101C33" stroke-width="5"/><path d="M17 31Q17 12 38 12H116" fill="none" stroke="#2E6BFF" stroke-width="6"/><rect x="91" y="42" width="51" height="31" rx="8" fill="#68F0B2" stroke="#101C33" stroke-width="4"/><circle cx="105" cy="58" r="6" fill="#101C33"/>'}),
+    doodle({id:'key-access',name:'Access Key',category:'onchain',tags:['key','access','security'],vb:'0 0 160 80',ar:.5,inner:'<circle cx="41" cy="39" r="27" fill="#FFC53D" stroke="#101C33" stroke-width="6"/><circle cx="41" cy="39" r="10" fill="#FFFFFF" stroke="#101C33" stroke-width="4"/><path d="M67 39H148M117 39V58M135 39V52" stroke="#101C33" stroke-width="9" stroke-linecap="round"/>'}),
+    doodle({id:'protocol-globe',name:'Protocol Globe',category:'onchain',tags:['globe','network','global'],inner:'<circle cx="50" cy="50" r="43" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><ellipse cx="50" cy="50" rx="20" ry="43" fill="none" stroke="#2E6BFF" stroke-width="4"/><path d="M8 50H92M15 30H85M15 70H85" stroke="#123A9E" stroke-width="4"/><circle cx="73" cy="29" r="7" fill="#68F0B2"/>'}),
+    doodle({id:'token-coin',name:'Token Coin',category:'onchain',tags:['token','coin','asset'],inner:'<circle cx="50" cy="50" r="44" fill="#FFC53D" stroke="#101C33" stroke-width="5"/><circle cx="50" cy="50" r="32" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="7 5"/><path d="M34 56L49 29L66 56L50 68Z" fill="#2E6BFF" stroke="#101C33" stroke-width="3"/>'}),
+    doodle({id:'beacon-tower',name:'Beacon Tower',category:'onchain',tags:['beacon','signal','infra'],vb:'0 0 120 110',ar:.917,inner:'<path d="M47 103L60 35L73 103M35 103H85M49 74H71" fill="none" stroke="#101C33" stroke-width="7" stroke-linecap="round"/><circle cx="60" cy="26" r="9" fill="#2E6BFF"/><path d="M39 15Q21 27 39 41M81 15Q99 27 81 41M25 4Q-3 27 25 50M95 4Q123 27 95 50" fill="none" stroke="#68F0B2" stroke-width="5" stroke-linecap="round"/>'}),
+    doodle({id:'chain-link',name:'Chain Link',category:'onchain',tags:['chain','link','connection'],vb:'0 0 160 80',ar:.5,inner:'<path d="M63 22L47 10Q35 1 24 12L10 26Q0 37 10 48L26 64Q37 75 49 64L62 51" fill="none" stroke="#2E6BFF" stroke-width="12" stroke-linecap="round"/><path d="M97 58L113 70Q125 79 136 68L150 54Q160 43 150 32L134 16Q123 5 111 16L98 29" fill="none" stroke="#123A9E" stroke-width="12" stroke-linecap="round"/><path d="M46 40H114" stroke="#101C33" stroke-width="10" stroke-linecap="round"/>'}),
+    doodle({id:'bridge-span',name:'Bridge Span',category:'onchain',tags:['bridge','crosschain','connect'],vb:'0 0 180 100',ar:.556,inner:'<path d="M12 85V39M168 85V39M12 45Q90 2 168 45M12 61Q90 18 168 61M40 85V51M70 85V38M110 85V38M140 85V51M4 86H176" fill="none" stroke="#123A9E" stroke-width="6" stroke-linecap="round"/><circle cx="90" cy="28" r="8" fill="#68F0B2"/>'}),
+    doodle({id:'tape-blue',name:'Blue Tape',category:'tactile',tags:['tape','collage','texture'],vb:'0 0 180 60',ar:.333,inner:'<path d="M8 17L171 6L176 44L13 55Z" fill="#9DBDF9" fill-opacity=".78"/><path d="M18 21L164 12M23 47L168 36" stroke="#FFFFFF" stroke-width="3" stroke-dasharray="8 7" opacity=".75"/>'}),
+    doodle({id:'torn-strip',name:'Torn Paper',category:'tactile',tags:['paper','torn','collage'],vb:'0 0 180 70',ar:.389,inner:'<path d="M5 10L19 15L31 7L43 14L57 6L71 13L86 7L101 15L116 5L130 13L145 7L158 15L175 9V60L160 56L147 64L132 57L116 65L101 58L84 64L69 56L53 65L38 58L21 64L5 58Z" fill="#F7F2E8" stroke="#101C33" stroke-width="3"/>'}),
+    doodle({id:'map-pin',name:'Map Pin',category:'tactile',tags:['pin','location','point'],vb:'0 0 80 110',ar:1.375,inner:'<path d="M40 5Q70 5 70 36Q70 61 40 103Q10 61 10 36Q10 5 40 5Z" fill="#FF4D45" stroke="#101C33" stroke-width="5"/><circle cx="40" cy="36" r="13" fill="#FFFFFF" stroke="#101C33" stroke-width="4"/>'}),
+    doodle({id:'paperclip',name:'Paperclip',category:'tactile',tags:['paperclip','source','attachment'],vb:'0 0 80 130',ar:1.625,inner:'<path d="M51 21L22 79Q11 101 29 112Q48 122 59 99L72 74Q81 56 66 47Q52 38 42 57L25 91Q20 101 29 106Q38 110 43 100L61 64" fill="none" stroke="#123A9E" stroke-width="9" stroke-linecap="round"/>'}),
+    doodle({id:'push-pin',name:'Push Pin',category:'tactile',tags:['pin','note','board'],vb:'0 0 90 120',ar:1.333,inner:'<path d="M23 12H67L62 49L77 67V77H50V112H40V77H13V67L28 49Z" fill="#FFC53D" stroke="#101C33" stroke-width="5" stroke-linejoin="round"/><path d="M28 49H62" stroke="#FF6C43" stroke-width="5"/>'}),
+    doodle({id:'crop-marks',name:'Crop Marks',category:'tactile',tags:['crop','frame','print'],inner:'<path d="M37 8H8V37M63 8H92V37M37 92H8V63M63 92H92V63" fill="none" stroke="#101C33" stroke-width="5"/><circle cx="50" cy="50" r="5" fill="#2E6BFF"/>'}),
+    doodle({id:'halftone-dot',name:'Halftone Field',category:'tactile',tags:['halftone','dots','texture'],inner:'<defs><pattern id="cmvngDots" width="16" height="16" patternUnits="userSpaceOnUse"><circle cx="4" cy="4" r="4" fill="#2E6BFF"/><circle cx="12" cy="12" r="2.5" fill="#123A9E"/></pattern></defs><circle cx="50" cy="50" r="46" fill="url(#cmvngDots)"/>'}),
+    doodle({id:'registration-cross',name:'Registration Cross',category:'tactile',tags:['print','registration','mark'],inner:'<circle cx="50" cy="50" r="34" fill="none" stroke="#2E6BFF" stroke-width="4"/><circle cx="50" cy="50" r="18" fill="none" stroke="#FF4D45" stroke-width="4"/><path d="M50 4V96M4 50H96" stroke="#101C33" stroke-width="3"/><circle cx="50" cy="50" r="5" fill="#101C33"/>'}),
+    doodle({id:'chat-bubble',name:'Chat Bubble',category:'social',tags:['chat','reply','conversation'],vb:'0 0 140 100',ar:.714,inner:'<path d="M9 12H131V76H64L35 94L40 76H9Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5" stroke-linejoin="round"/><circle cx="45" cy="45" r="7" fill="#2E6BFF"/><circle cx="70" cy="45" r="7" fill="#2E6BFF"/><circle cx="95" cy="45" r="7" fill="#2E6BFF"/>'}),
+    doodle({id:'quote-marks',name:'Quote Marks',category:'social',tags:['quote','opinion','voice'],vb:'0 0 120 80',ar:.667,inner:'<path d="M8 67C8 35 21 14 48 8V25C35 29 29 39 29 49H48V72H8ZM66 67C66 35 79 14 106 8V25C93 29 87 39 87 49H106V72H66Z" fill="#2E6BFF"/>'}),
+    doodle({id:'heart-pulse',name:'Heart Pulse',category:'social',tags:['heart','like','pulse'],inner:'<path d="M50 90Q6 62 8 30Q10 8 31 8Q45 8 50 23Q55 8 69 8Q90 8 92 30Q94 62 50 90Z" fill="#FF4D45" stroke="#101C33" stroke-width="4"/><path d="M17 49H34L43 33L55 65L65 48H84" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'repost-loop',name:'Repost Loop',category:'social',tags:['repost','remix','loop'],vb:'0 0 140 100',ar:.714,inner:'<path d="M22 34Q30 16 53 16H112M97 3L114 16L98 30M118 66Q110 84 87 84H28M43 97L26 84L42 70" fill="none" stroke="#18B27B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'}),
+    doodle({id:'cursor-click',name:'Cursor Click',category:'social',tags:['cursor','click','action'],inner:'<path d="M24 12L78 59L55 62L68 87L55 94L42 68L26 84Z" fill="#FFFFFF" stroke="#123A9E" stroke-width="6" stroke-linejoin="round"/><path d="M68 12V28M86 26L74 38M43 5L48 20" stroke="#2E6BFF" stroke-width="6" stroke-linecap="round"/>'}),
+    doodle({id:'notification-bell',name:'Notification Bell',category:'social',tags:['notification','bell','alert'],inner:'<path d="M19 72H81L72 61V41Q72 17 50 17Q28 17 28 41V61Z" fill="#FFC53D" stroke="#101C33" stroke-width="5"/><path d="M39 78Q42 93 50 93Q58 93 61 78" fill="#2E6BFF" stroke="#101C33" stroke-width="4"/><circle cx="82" cy="18" r="14" fill="#FF4D45" stroke="#101C33" stroke-width="4"/>'}),
+    doodle({id:'poll-bars',name:'Poll Bars',category:'social',tags:['poll','vote','community'],vb:'0 0 150 100',ar:.667,inner:'<rect x="7" y="8" width="136" height="24" rx="12" fill="#BFD1F5"/><rect x="7" y="8" width="98" height="24" rx="12" fill="#2E6BFF"/><rect x="7" y="42" width="136" height="24" rx="12" fill="#BFD1F5"/><rect x="7" y="42" width="64" height="24" rx="12" fill="#68F0B2"/><rect x="7" y="76" width="136" height="16" rx="8" fill="#BFD1F5"/><rect x="7" y="76" width="38" height="16" rx="8" fill="#FFC53D"/>'}),
+    doodle({id:'view-eye',name:'View Eye',category:'social',tags:['view','watch','attention'],vb:'0 0 150 90',ar:.6,inner:'<path d="M7 45Q38 7 75 7Q112 7 143 45Q112 83 75 83Q38 83 7 45Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><circle cx="75" cy="45" r="23" fill="#2E6BFF"/><circle cx="75" cy="45" r="9" fill="#101C33"/><circle cx="66" cy="35" r="5" fill="#FFFFFF"/>'})
+  ];
+
+  function structure(def) { return def; }
+  function textContext(rawFmt, rawTheme) {
+    const f = fmt(rawFmt), t = theme(rawTheme);
+    return {f:f,t:t,W:f.w,H:f.h,pad:px(f.w * .075),inner:px(f.w * .85)};
+  }
+
+  const textStructures = [
+    structure({id:'signal-lead',name:'Signal Lead',category:'research',tags:['headline','deck','signal'],note:'Kicker, sharp claim, then one sourced deck.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.22;return [textLayer('RESEARCH SIGNAL · 01',c.pad,y,c.inner,22,c.t.blue,'Space Mono',800,1),textLayer('the part nobody\nis watching yet',c.pad,y+56,c.inner,92,c.t.ink,'Sora',800,.94),textLayer('One clear observation, supported by the strongest verified fact.',c.pad,y+270,c.inner*.78,31,c.t.muted,'Sora',600,1.32)];}}),
+    structure({id:'editorial-thesis',name:'Editorial Thesis',category:'opinion',tags:['serif','thesis','editorial'],note:'Human observation with an elegant italic turn.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.23;return [textLayer('THE OBSERVATION',c.pad,y,c.inner,21,c.t.blue,'Space Mono',800,1),textLayer('something changed…',c.pad,y+58,c.inner,105,c.t.ink,'Instrument Serif',400,.96,{fst:'italic'}),textLayer('and the numbers explain why.',c.pad,y+194,c.inner,53,c.t.navy,'Sora',800,1.05),line(c.pad,y+288,c.inner*.46,10,c.t.coral,6),textLayer('@cmvng · field note',c.pad,y+320,c.inner,21,c.t.muted,'Space Mono',700,1)];}}),
+    structure({id:'number-monolith',name:'Number Monolith',category:'data',tags:['number','metric','hero'],note:'One verified number owns the canvas.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.19;return [textLayer('THE NUMBER THAT MATTERS',c.pad,y,c.inner,22,c.t.muted,'Space Mono',800,1),textLayer('2.4M',c.pad,y+45,c.inner,190,c.t.navy,'Archivo Black',800,.82),textLayer('verified users',c.pad,y+250,c.inner,37,c.t.ink,'Sora',800,1),textLayer('current snapshot · source required',c.pad,y+304,c.inner,21,c.t.blue,'Space Mono',700,1)];}}),
+    structure({id:'pull-quote',name:'Pull Quote',category:'opinion',tags:['quote','attribution','serif'],note:'Large quote with deliberate attribution.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.18;return [textLayer('“',c.pad,y,c.inner*.2,170,c.t.soft,'Instrument Serif',400,.8),textLayer('the best take is usually\nthe simplest true one.',c.pad+25,y+115,c.inner-25,76,c.t.ink,'Instrument Serif',400,1.02,{fst:'italic'}),line(c.pad+25,y+340,c.inner*.2,8,c.t.blue,5),textLayer('@creator · reaction / context',c.pad+25,y+372,c.inner,21,c.t.blue,'Space Mono',800,1)];}}),
+    structure({id:'versus-columns',name:'Versus Columns',category:'comparison',tags:['versus','split','contrast'],note:'Two equal columns reveal the mismatch.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),gap=c.inner*.08,col=c.inner*.46,y=c.H*.25;return [textLayer('WHAT THEY SAY',c.pad,y,col,20,c.t.muted,'Space Mono',800,1),textLayer('the\nnarrative',c.pad,y+58,col,64,c.t.ink,'Sora',800,.94),textLayer('VS',c.pad+col+gap*.1,y+80,gap,24,c.t.coral,'Archivo Black',800,1),textLayer('WHAT THE DATA SAYS',c.pad+col+gap,y,col,20,c.t.blue,'Space Mono',800,1),textLayer('the\nreality',c.pad+col+gap,y+58,col,64,c.t.navy,'Sora',800,.94)];}}),
+    structure({id:'evidence-ladder',name:'Evidence Ladder',category:'research',tags:['evidence','facts','ladder'],note:'A claim followed by increasingly strong proof.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.18;return [textLayer('THE CLAIM',c.pad,y,c.inner,20,c.t.coral,'Space Mono',800,1),textLayer('one strong idea.',c.pad,y+44,c.inner,86,c.t.ink,'Sora',800,.94),textLayer('01  SOURCE CONFIRMS THE ACTION',c.pad,y+180,c.inner*.70,24,c.t.navy,'Space Mono',800,1),textLayer('02  PRODUCT PROVES THE STATUS',c.pad+c.inner*.10,y+250,c.inner*.76,24,c.t.navy,'Space Mono',800,1),textLayer('03  METRIC EARNS THE CONCLUSION',c.pad+c.inner*.20,y+320,c.inner*.80,24,c.t.blue,'Space Mono',800,1)];}}),
+    structure({id:'manifesto-stack',name:'Manifesto Stack',category:'culture',tags:['manifesto','stack','poster'],note:'Short declarations stacked with escalating force.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.20;return [textLayer('BUILD.',c.pad,y,c.inner,112,c.t.ink,'Archivo Black',800,.8),textLayer('SHOW IT.',c.pad,y+118,c.inner,112,c.t.blue,'Archivo Black',800,.8),textLayer('PROVE IT.',c.pad,y+236,c.inner,112,c.t.coral,'Archivo Black',800,.8),textLayer('then let the work travel.',c.pad,y+372,c.inner,27,c.t.muted,'Space Mono',700,1)];}}),
+    structure({id:'vertical-marginalia',name:'Vertical Marginalia',category:'editorial',tags:['vertical','margin','essay'],note:'A rotated section label anchors a long-form lead.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.18;return [textLayer('FIELD NOTE · 004',c.pad-15,y+250,c.H*.42,20,c.t.blue,'Space Mono',800,1,{rot:-90}),textLayer('A small detail\nchanges the whole story.',c.pad+c.W*.10,y,c.inner-c.W*.10,80,c.t.ink,'Instrument Serif',500,1.02),textLayer('Start with what is visible. Then explain what it means.',c.pad+c.W*.10,y+230,c.inner*.72,31,c.t.muted,'Sora',600,1.35),line(c.pad+c.W*.10,y+350,c.inner*.55,10,c.t.gold,5)];}}),
+    structure({id:'caption-rail',name:'Caption Rail',category:'social',tags:['caption','rail','image'],note:'A compact caption rail for image-led work.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.68;return [line(c.pad,y,c.inner,10,c.t.ink,4),textLayer('01',c.pad,y+30,c.inner*.08,21,c.t.blue,'Space Mono',800,1),textLayer('PROJECT / PRODUCT / MOMENT',c.pad+c.inner*.10,y+30,c.inner*.52,21,c.t.ink,'Space Mono',800,1),textLayer('The one-sentence observation belongs here.',c.pad+c.inner*.10,y+72,c.inner*.72,30,c.t.ink,'Sora',700,1.28),textLayer('SOURCE ↗',c.pad+c.inner*.78,y+30,c.inner*.22,18,c.t.muted,'Space Mono',800,1)];}}),
+    structure({id:'question-answer',name:'Question / Answer',category:'education',tags:['question','answer','explain'],note:'A clear question answered in one memorable line.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.22;return [textLayer('THE QUESTION',c.pad,y,c.inner,20,c.t.coral,'Space Mono',800,1),textLayer('what actually\nchanged?',c.pad,y+48,c.inner,82,c.t.ink,'Sora',800,.95),textLayer('THE SHORT ANSWER',c.pad,y+230,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('the product became usable.',c.pad,y+278,c.inner,51,c.t.navy,'Sora',800,1.03)];}}),
+    structure({id:'three-beat',name:'Three Beat Story',category:'writing',tags:['three','beats','story'],note:'Setup, turn, and consequence in three beats.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.20,col=c.inner*.29,gap=c.inner*.065;return ['SETUP','TURN','SO WHAT'].map(function(label,i){return textLayer('0'+(i+1)+' · '+label,c.pad+i*(col+gap),y,col,20,i===1?c.t.coral:c.t.blue,'Space Mono',800,1);}).concat(['what was true','what changed','why it matters'].map(function(label,i){return textLayer(label,c.pad+i*(col+gap),y+62,col,43,c.t.ink,'Sora',800,1.05);}));}}),
+    structure({id:'indexed-essay',name:'Indexed Essay',category:'editorial',tags:['index','essay','sections'],note:'An essay title paired with a crisp section index.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.17;return [textLayer('ESSAY · VOL. 01',c.pad,y,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('the interface\nis the thesis.',c.pad,y+55,c.inner*.68,88,c.t.ink,'Instrument Serif',500,.98),textLayer('01  CONTEXT\n02  PRODUCT\n03  PROOF\n04  CONCLUSION',c.pad+c.inner*.73,y+72,c.inner*.27,22,c.t.navy,'Space Mono',800,1.65),line(c.pad,y+300,c.inner,10,c.t.ink,3),textLayer('A compact argument about what the design reveals.',c.pad,y+335,c.inner*.72,29,c.t.muted,'Sora',600,1.32)];}}),
+    structure({id:'terminal-log',name:'Terminal Log',category:'product',tags:['terminal','log','code'],note:'A technical update rendered as a live log.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.22;return [textLayer('CMVNG / BUILD LOG',c.pad,y,c.inner,20,c.t.mint,'Space Mono',800,1),textLayer('> product_status',c.pad,y+58,c.inner,36,c.t.paper,'Space Mono',800,1),textLayer('LIVE',c.pad,y+112,c.inner,110,c.t.mint,'Archivo Black',800,.9),textLayer('✓ shipped core workflow\n✓ source verification on\n→ next: scale the creative surface',c.pad,y+235,c.inner,25,c.t.paper,'Space Mono',650,1.6)];}}),
+    structure({id:'field-note',name:'Field Note',category:'research',tags:['note','observation','handwritten'],note:'A dated observation with a highlighted turn.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.18;return [textLayer('FIELD NOTE / 29 AUG',c.pad,y,c.inner,20,c.t.muted,'Space Mono',800,1),textLayer('I noticed the users\ndidn’t ask for more.',c.pad,y+60,c.inner,71,c.t.ink,'Instrument Serif',500,1.04,{fst:'italic'}),textLayer('They asked for clearer.',c.pad,y+237,c.inner,61,c.t.blue,'Sora',800,1),line(c.pad,y+325,c.inner*.43,12,c.t.gold,8),textLayer('OBSERVATION · SOURCE · CONSEQUENCE',c.pad,y+360,c.inner,18,c.t.muted,'Space Mono',700,1)];}}),
+    structure({id:'alert-ticker',name:'Alert Ticker',category:'updates',tags:['alert','ticker','breaking'],note:'Urgent headline with a supporting wire line.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.24;return [textLayer('BREAKING  //  CONFIRMED',c.pad,y,c.inner,24,c.t.red,'Space Mono',800,1),textLayer('SOMETHING\nJUST CHANGED.',c.pad,y+55,c.inner,104,c.t.ink,'Archivo Black',800,.87),line(c.pad,y+275,c.inner,12,c.t.red,9),textLayer('PRODUCT STATUS · DATE · SOURCE · IMPACT',c.pad,y+315,c.inner,22,c.t.muted,'Space Mono',800,1)];}}),
+    structure({id:'timeline-heading',name:'Timeline Heading',category:'roadmap',tags:['timeline','milestones','dates'],note:'A heading system built around three dated beats.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.16;return [textLayer('PROJECT TIMELINE',c.pad,y,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('from idea\nto live product',c.pad,y+55,c.inner,80,c.t.ink,'Sora',800,.94)].concat(['Q1 / TEST','Q2 / SHIP','NOW / SCALE'].map(function(label,i){return textLayer(label,c.pad+i*c.inner*.34,y+275,c.inner*.30,22,i===2?c.t.coral:c.t.navy,'Space Mono',800,1);}));}}),
+    structure({id:'definition-card',name:'Definition Card',category:'education',tags:['definition','glossary','concept'],note:'Explains one technical concept without noise.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.20;return [textLayer('DEFINITION · 01',c.pad,y,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('PROOF\nOF PRODUCT',c.pad,y+53,c.inner,87,c.t.navy,'Archivo Black',800,.9),textLayer('/pruːf əv ˈprɒdʌkt/',c.pad,y+235,c.inner,21,c.t.muted,'Space Mono',600,1),textLayer('Evidence that the thing works for real people today.',c.pad,y+285,c.inner*.78,34,c.t.ink,'Sora',650,1.32)];}}),
+    structure({id:'myth-fact',name:'Myth / Fact',category:'education',tags:['myth','fact','correction'],note:'Corrects a popular misconception with contrast.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.20;return [textLayer('MYTH',c.pad,y,c.inner,21,c.t.red,'Space Mono',800,1),textLayer('more features\n= better product',c.pad,y+47,c.inner,65,c.t.muted,'Sora',800,.98,{strike:1}),textLayer('FACT',c.pad,y+205,c.inner,21,c.t.mint,'Space Mono',800,1),textLayer('the right workflow\nwins.',c.pad,y+252,c.inner,77,c.t.ink,'Sora',800,.94)];}}),
+    structure({id:'before-after-type',name:'Before / After Type',category:'comparison',tags:['before','after','transformation'],note:'A transformation story with unequal emphasis.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.19;return [textLayer('BEFORE',c.pad,y,c.inner,20,c.t.muted,'Space Mono',800,1),textLayer('a crowded\nworkflow',c.pad,y+48,c.inner,59,c.t.muted,'Sora',700,.98),textLayer('→ AFTER',c.pad,y+185,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('one clear\ncreative system.',c.pad,y+233,c.inner,82,c.t.navy,'Sora',800,.94)];}}),
+    structure({id:'feature-runway',name:'Feature Runway',category:'product',tags:['features','product','list'],note:'Feature names progress from live to next.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.18;return [textLayer('PRODUCT RUNWAY',c.pad,y,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('WHAT WORKS\nRIGHT NOW',c.pad,y+52,c.inner,76,c.t.ink,'Archivo Black',800,.9)].concat(['LIVE  / RESEARCH','LIVE  / WRITE','LIVE  / DESIGN','NEXT  / DISTRIBUTE'].map(function(label,i){return textLayer(label,c.pad+c.inner*.09*i,y+250+i*49,c.inner-c.inner*.09*i,22,i===3?c.t.coral:c.t.navy,'Space Mono',800,1);}));}}),
+    structure({id:'citation-stack',name:'Citation Stack',category:'research',tags:['citation','sources','footnotes'],note:'A big claim with visible source discipline.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.18;return [textLayer('THE CLAIM [1]',c.pad,y,c.inner,20,c.t.blue,'Space Mono',800,1),textLayer('usage tells a\ndifferent story.',c.pad,y+50,c.inner,83,c.t.ink,'Sora',800,.95),line(c.pad,y+245,c.inner,8,c.t.ink,3),textLayer('[1] official product page · accessed today\n[2] verified public metric · current snapshot\n[3] project announcement · exact date',c.pad,y+280,c.inner,21,c.t.muted,'Space Mono',600,1.55)];}}),
+    structure({id:'founder-voice',name:'Founder Voice',category:'business',tags:['founder','voice','pitch'],note:'Founder statement with a compact proof line.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.20;return [textLayer('FROM THE FOUNDER',c.pad,y,c.inner,20,c.t.gold,'Space Mono',800,1),textLayer('“we built the thing\nwe needed ourselves.”',c.pad,y+55,c.inner,72,c.t.ink,'Instrument Serif',500,1.02,{fst:'italic'}),textLayer('THE PROOF',c.pad,y+250,c.inner,18,c.t.blue,'Space Mono',800,1),textLayer('live product · real users · clear next step',c.pad,y+288,c.inner,28,c.t.navy,'Sora',700,1.2)];}}),
+    structure({id:'mini-thread',name:'Mini Thread',category:'social',tags:['thread','posts','sequence'],note:'Three post-sized thoughts with a visible progression.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.17;return ['THE HOOK','THE RECEIPT','THE TAKEAWAY'].flatMap(function(label,i){return [textLayer('0'+(i+1),c.pad,y+i*c.H*.19,c.inner*.08,20,i===2?c.t.coral:c.t.blue,'Space Mono',800,1),textLayer(label,c.pad+c.inner*.11,y+i*c.H*.19,c.inner*.89,20,c.t.muted,'Space Mono',800,1),textLayer(i===0?'A sharp observation starts here.':i===1?'One verified fact earns attention.':'Now explain why it matters.',c.pad+c.inner*.11,y+38+i*c.H*.19,c.inner*.82,32,c.t.ink,'Sora',700,1.2)];});}}),
+    structure({id:'cover-story',name:'Cover Story',category:'editorial',tags:['cover','magazine','feature'],note:'Magazine-style feature title with issue furniture.',build:function(rawFmt,rawTheme){const c=textContext(rawFmt,rawTheme),y=c.H*.12;return [textLayer('CMVNG / ISSUE 05',c.pad,y,c.inner,22,c.t.ink,'Space Mono',800,1),textLayer('THE\nBUILDERS\nISSUE',c.pad,y+72,c.inner,105,c.t.navy,'Archivo Black',800,.82),textLayer('How product-minded creators turn research into signal.',c.pad,y+360,c.inner*.67,31,c.t.ink,'Sora',650,1.25),textLayer('RESEARCH · DESIGN · CULTURE',c.pad,y+460,c.inner,18,c.t.coral,'Space Mono',800,1)];}})
+  ];
+
+  function layout(def) { return def; }
+  function layoutContext(rawFmt, rawTheme) {
+    const f=fmt(rawFmt),t=theme(rawTheme),pad=px(f.w*.07);
+    return {f:f,t:t,W:f.w,H:f.h,pad:pad,inner:f.w-pad*2};
+  }
+  function background(c, color) { return svgLayer('0 0 100 100','<rect width="100" height="100" fill="'+(color||c.t.bg)+'"/>',0,0,c.W,c.H/Math.max(1,c.W)); }
+
+  const specialLayouts = [
+    layout({id:'evidence-board',name:'Evidence Board',category:'research',tags:['evidence','cards','connectors'],note:'A pinned investigation board with three source cards.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),y=c.H*.17,w=c.inner*.29,g=c.inner*.065;return [background(c,c.t.bg),textLayer('EVIDENCE BOARD',c.pad,c.H*.08,c.inner,22,c.t.blue,'Space Mono',800,1),textLayer('one claim. three receipts.',c.pad,c.H*.115,c.inner,48,c.t.ink,'Sora',800,1)].concat([0,1,2].map(function(i){return panel(c.pad+i*(w+g),y+i*22,w,c.H*.43,c.t.paper,10,c.t.ink,2);})).concat([0,1,2].map(function(i){return textLayer('0'+(i+1)+'\nSOURCE\nVERIFIED FACT',c.pad+28+i*(w+g),y+50+i*22,w-56,23,i===1?c.t.blue:c.t.ink,'Space Mono',800,1.5);})).concat([svgLayer('0 0 180 80','<path d="M7 60Q48 6 88 50Q122 82 173 18" fill="none" stroke="'+c.t.coral+'" stroke-width="5" stroke-dasharray="8 7"/><circle cx="7" cy="60" r="6" fill="'+c.t.coral+'"/><circle cx="173" cy="18" r="6" fill="'+c.t.coral+'"/>',c.pad+c.inner*.18,c.H*.66,c.inner*.64,.444)]);}}),
+    layout({id:'microscope-focus',name:'Microscope Focus',category:'research',tags:['focus','lens','detail'],note:'A magnified detail dominates a quiet research card.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),d=Math.min(c.W*.56,c.H*.56);return [background(c,c.t.paper),textLayer('MICRO SIGNAL · 01',c.pad,c.H*.09,c.inner,21,c.t.blue,'Space Mono',800,1),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="43" fill="'+c.t.bg+'" stroke="'+c.t.ink+'" stroke-width="5"/><circle cx="50" cy="50" r="29" fill="none" stroke="'+c.t.blue+'" stroke-width="5"/><path d="M75 78L95 98" stroke="'+c.t.ink+'" stroke-width="9" stroke-linecap="round"/><circle cx="45" cy="43" r="9" fill="'+c.t.mint+'"/><path d="M25 58Q50 26 76 59" fill="none" stroke="'+c.t.coral+'" stroke-width="4"/>',c.pad,c.H*.22,d,1),textLayer('THE DETAIL\nTHAT CHANGES IT',c.pad+c.W*.51,c.H*.30,c.W*.40,56,c.t.ink,'Archivo Black',800,.92),textLayer('Zoom in before you generalise.',c.pad+c.W*.51,c.H*.52,c.W*.36,25,c.t.muted,'Sora',650,1.3),textLayer('SOURCE / DATE / STATUS',c.pad,c.H*.82,c.inner,18,c.t.blue,'Space Mono',800,1)];}}),
+    layout({id:'receipts-desk',name:'Receipts Desk',category:'research',tags:['receipt','collage','desk'],note:'Layered paper receipts and tape form a tactile proof desk.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,'#D8CBB7'),panel(c.pad,c.H*.14,c.inner*.72,c.H*.61,c.t.paper,2,c.t.ink,2),svgLayer('0 0 180 60','<path d="M8 17L171 6L176 44L13 55Z" fill="'+c.t.soft+'" opacity=".78"/>',c.pad+c.inner*.16,c.H*.105,c.inner*.28,.333),textLayer('RECEIPT / 001',c.pad+35,c.H*.20,c.inner*.60,20,c.t.muted,'Space Mono',800,1),textLayer('THE CLAIM\nCHECKS OUT.',c.pad+35,c.H*.28,c.inner*.61,68,c.t.ink,'Archivo Black',800,.91),line(c.pad+35,c.H*.52,c.inner*.57,10,c.t.ink,3,'8 7'),textLayer('source ........................ verified\nproduct ....................... live\nmetric .................... current',c.pad+35,c.H*.56,c.inner*.58,20,c.t.navy,'Space Mono',700,1.65),panel(c.pad+c.inner*.64,c.H*.48,c.inner*.31,c.H*.31,c.t.gold,2,c.t.ink,3),textLayer('PROOF\nFOUND',c.pad+c.inner*.68,c.H*.56,c.inner*.23,34,c.t.ink,'Archivo Black',800,.95,{rot:-7})];}}),
+    layout({id:'thesis-margin',name:'Thesis Margin',category:'opinion',tags:['thesis','margin','editorial'],note:'Serif thesis with a disciplined reference margin.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),rail=c.inner*.24;return [background(c,c.t.paper),panel(c.pad,c.H*.08,rail,c.H*.84,c.t.ink,0),textLayer('CMVNG\nTHESIS\nNo. 08',c.pad+30,c.H*.14,rail-60,22,c.t.paper,'Space Mono',800,1.7),textLayer('the product is live.\nthe narrative is late.',c.pad+rail+c.inner*.08,c.H*.20,c.inner-rail-c.inner*.08,75,c.t.ink,'Instrument Serif',500,1.06,{fst:'italic'}),line(c.pad+rail+c.inner*.08,c.H*.52,c.inner*.30,8,c.t.coral,6),textLayer('A useful thesis is specific enough to challenge and clear enough to remember.',c.pad+rail+c.inner*.08,c.H*.57,c.inner-rail-c.inner*.12,29,c.t.muted,'Sora',600,1.35),textLayer('01 / OBSERVATION\n02 / PROOF\n03 / CONSEQUENCE',c.pad+rail+c.inner*.08,c.H*.76,c.inner-rail,18,c.t.blue,'Space Mono',800,1.5)];}}),
+    layout({id:'source-stack',name:'Source Stack',category:'research',tags:['sources','stack','links'],note:'A source-led stack makes the research trail visible.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad+c.inner*.16,w=c.inner*.74;return [background(c,c.t.bg),textLayer('SOURCE STACK',c.pad,c.H*.08,c.inner,23,c.t.blue,'Space Mono',800,1),panel(x+28,c.H*.22,w,c.H*.50,c.t.soft,10,c.t.ink,2),panel(x+14,c.H*.205,w,c.H*.50,'#DDE8FC',10,c.t.ink,2),panel(x,c.H*.19,w,c.H*.50,c.t.paper,10,c.t.ink,3),textLayer('01  PRIMARY SOURCE',x+34,c.H*.25,w-68,20,c.t.blue,'Space Mono',800,1),textLayer('The strongest fact\nbelongs at the top.',x+34,c.H*.33,w-68,59,c.t.ink,'Sora',800,.98),line(x+34,c.H*.54,w-68,8,c.t.soft,5),textLayer('02  PRODUCT PAGE\n03  ANNOUNCEMENT\n04  CURRENT METRIC',x+34,c.H*.59,w-68,20,c.t.navy,'Space Mono',700,1.52),textLayer('4 VERIFIED INPUTS',c.pad,c.H*.82,c.inner,20,c.t.coral,'Space Mono',800,1)];}}),
+    layout({id:'field-notebook',name:'Field Notebook',category:'research',tags:['notebook','field','notes'],note:'Ruled research notebook with hand-annotated findings.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),top=c.H*.11;const ruled=[];for(let i=0;i<9;i++)ruled.push(line(c.pad+c.inner*.12,top+105+i*c.H*.067,c.inner*.78,4,c.t.soft,2));return [background(c,'#F7F2E8'),svgLayer('0 0 30 100','<path d="M15 0V100" stroke="'+c.t.red+'" stroke-width="2"/><circle cx="15" cy="14" r="5" fill="'+c.t.bg+'" stroke="'+c.t.ink+'" stroke-width="2"/><circle cx="15" cy="50" r="5" fill="'+c.t.bg+'" stroke="'+c.t.ink+'" stroke-width="2"/><circle cx="15" cy="86" r="5" fill="'+c.t.bg+'" stroke="'+c.t.ink+'" stroke-width="2"/>',c.pad,top,c.inner*.07,c.H*.76/(c.inner*.07))].concat(ruled).concat([textLayer('FIELD NOTES',c.pad+c.inner*.12,top+20,c.inner*.72,26,c.t.blue,'Space Mono',800,1),textLayer('What did I actually observe?',c.pad+c.inner*.12,top+104,c.inner*.72,50,c.t.ink,'Instrument Serif',500,1.05,{fst:'italic'}),textLayer('→ product is live\n→ users repeat one behavior\n→ the opportunity is clearer',c.pad+c.inner*.16,top+250,c.inner*.65,29,c.t.navy,'Space Mono',700,1.55),textLayer('circle the part worth sharing',c.pad+c.inner*.20,top+480,c.inner*.57,24,c.t.coral,'Sora',700,1)]);}}),
+    layout({id:'metric-monolith',name:'Metric Monolith',category:'data',tags:['metric','number','monolith'],note:'A single number sits inside a heavy architectural frame.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,c.t.ink),panel(c.pad,c.H*.12,c.inner,c.H*.72,c.t.ink,0,c.t.soft,3),textLayer('VERIFIED METRIC / LIVE',c.pad+38,c.H*.18,c.inner-76,20,c.t.mint,'Space Mono',800,1),textLayer('18.4M',c.pad+32,c.H*.28,c.inner-64,180,c.t.paper,'Archivo Black',800,.8),line(c.pad+38,c.H*.53,c.inner-76,12,c.t.blue,8),textLayer('MONTHLY ACTIVE USERS',c.pad+38,c.H*.58,c.inner-76,33,c.t.paper,'Sora',800,1),textLayer('source · date · comparison · context',c.pad+38,c.H*.68,c.inner-76,21,c.t.soft,'Space Mono',700,1),textLayer('↑ 34%',c.pad+c.inner*.68,c.H*.74,c.inner*.25,37,c.t.mint,'Archivo Black',800,1)];}}),
+    layout({id:'sparkline-dashboard',name:'Sparkline Dashboard',category:'data',tags:['dashboard','sparkline','metrics'],note:'A compact metric dashboard with a narrative lead.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),top=c.H*.17,w=c.inner*.47,g=c.inner*.06;return [background(c,c.t.bg),textLayer('THE PRODUCT IN NUMBERS',c.pad,c.H*.07,c.inner,24,c.t.ink,'Sora',800,1),panel(c.pad,top,w,c.H*.26,c.t.paper,9,c.t.soft,2),panel(c.pad+w+g,top,w,c.H*.26,c.t.navy,9),panel(c.pad,top+c.H*.30,w,c.H*.26,c.t.gold,9),panel(c.pad+w+g,top+c.H*.30,w,c.H*.26,c.t.paper,9,c.t.soft,2),textLayer('USERS\n2.4M',c.pad+28,top+28,w-56,34,c.t.ink,'Space Mono',800,1.35),textLayer('VOLUME\n$18M',c.pad+w+g+28,top+28,w-56,34,c.t.paper,'Space Mono',800,1.35),textLayer('GROWTH\n+34%',c.pad+28,top+c.H*.30+28,w-56,34,c.t.ink,'Space Mono',800,1.35),textLayer('STATUS\nLIVE',c.pad+w+g+28,top+c.H*.30+28,w-56,34,c.t.blue,'Space Mono',800,1.35),svgLayer('0 0 180 70','<path d="M6 58L40 49L72 54L106 28L139 38L174 9" fill="none" stroke="'+c.t.mint+'" stroke-width="7" stroke-linecap="round"/>',c.pad+w+g+30,top+c.H*.15,w-60,.389)];}}),
+    layout({id:'data-staircase',name:'Data Staircase',category:'data',tags:['steps','growth','progress'],note:'Metrics climb in literal steps toward the conclusion.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),base=c.H*.76,stepW=c.inner*.23;return [background(c,c.t.paper),textLayer('THE CLIMB',c.pad,c.H*.09,c.inner,22,c.t.blue,'Space Mono',800,1),textLayer('progress you can see.',c.pad,c.H*.14,c.inner,56,c.t.ink,'Sora',800,1)].concat([0,1,2,3].map(function(i){return panel(c.pad+i*stepW,base-i*c.H*.12,stepW,c.H*(.12+i*.12),[c.t.soft,c.t.blue,c.t.navy,c.t.mint][i],0,c.t.ink,2);})).concat([0,1,2,3].map(function(i){return textLayer(['01\nTEST','02\nSHIP','03\nUSE','04\nSCALE'][i],c.pad+18+i*stepW,base-i*c.H*.12+24,stepW-36,22,i===1||i===2?c.t.paper:c.t.ink,'Space Mono',800,1.35);}));}}),
+    layout({id:'scoreboard-duel',name:'Scoreboard Duel',category:'comparison',tags:['scoreboard','versus','data'],note:'Two projects face off in a broadcast-style scoreboard.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),top=c.H*.18,half=c.inner*.47;return [background(c,c.t.ink),textLayer('HEAD TO HEAD · VERIFIED DATA',c.pad,c.H*.08,c.inner,21,c.t.mint,'Space Mono',800,1),panel(c.pad,top,half,c.H*.55,c.t.navy,7),panel(c.pad+c.inner*.53,top,half,c.H*.55,c.t.paper,7),textLayer('PROJECT A',c.pad+30,top+38,half-60,24,c.t.soft,'Space Mono',800,1),textLayer('72',c.pad+26,top+105,half-52,145,c.t.paper,'Archivo Black',800,.8),textLayer('PROJECT B',c.pad+c.inner*.53+30,top+38,half-60,24,c.t.blue,'Space Mono',800,1),textLayer('48',c.pad+c.inner*.53+26,top+105,half-52,145,c.t.ink,'Archivo Black',800,.8),panel(c.W*.45,c.H*.39,c.W*.10,c.H*.10,c.t.gold,50,c.t.ink,3),textLayer('VS',c.W*.466,c.H*.42,c.W*.07,28,c.t.ink,'Archivo Black',800,1),textLayer('USERS  ·  PRODUCT  ·  MOMENTUM',c.pad,c.H*.81,c.inner,20,c.t.soft,'Space Mono',800,1)];}}),
+    layout({id:'quadrant-map',name:'Quadrant Map',category:'data',tags:['quadrant','positioning','map'],note:'A clean two-axis market map with a highlighted project.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad+c.inner*.08,y=c.H*.18,w=c.inner*.80,h=c.H*.59;return [background(c,c.t.paper),textLayer('MARKET MAP',c.pad,c.H*.07,c.inner,23,c.t.ink,'Sora',800,1),line(x,y+h,w,7,c.t.ink,4),svgLayer('0 0 20 100','<path d="M10 96V4M3 13L10 4L17 13" fill="none" stroke="'+c.t.ink+'" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',x-12,y,24,h/24),line(x,y+h*.50,w,5,c.t.soft,3,'8 7'),svgLayer('0 0 100 20','<path d="M3 10H97M88 3L97 10L88 17" fill="none" stroke="'+c.t.ink+'" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>',x,y+h-12,w,24/w),textLayer('NICHE',x,y+h+25,w*.2,17,c.t.muted,'Space Mono',800,1),textLayer('MASS',x+w*.85,y+h+25,w*.15,17,c.t.muted,'Space Mono',800,1),textLayer('IDEA',x-70,y+h*.86,w*.2,17,c.t.muted,'Space Mono',800,1,{rot:-90}),textLayer('LIVE',x-70,y+h*.12,w*.2,17,c.t.muted,'Space Mono',800,1,{rot:-90}),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="30" fill="'+c.t.blue+'" stroke="'+c.t.ink+'" stroke-width="6"/><circle cx="50" cy="50" r="10" fill="'+c.t.mint+'"/>',x+w*.65,y+h*.17,w*.15,1),textLayer('PROJECT',x+w*.62,y+h*.32,w*.21,18,c.t.blue,'Space Mono',800,1)];}}),
+    layout({id:'proof-meter-card',name:'Proof Meter Card',category:'data',tags:['meter','score','verification'],note:'A gauge turns source quality into a visual confidence score.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),d=c.inner*.55;return [background(c,c.t.bg),textLayer('CONFIDENCE CHECK',c.pad,c.H*.08,c.inner,22,c.t.blue,'Space Mono',800,1),svgLayer('0 0 160 95','<path d="M19 78A62 62 0 0 1 141 78" fill="none" stroke="'+c.t.soft+'" stroke-width="16" stroke-linecap="round"/><path d="M19 78A62 62 0 0 1 113 25" fill="none" stroke="'+c.t.blue+'" stroke-width="16" stroke-linecap="round"/><path d="M80 78L112 40" stroke="'+c.t.ink+'" stroke-width="7" stroke-linecap="round"/><circle cx="80" cy="78" r="10" fill="'+c.t.ink+'"/>',c.pad,c.H*.25,d,.594),textLayer('84',c.pad+d*.38,c.H*.47,d*.30,74,c.t.ink,'Archivo Black',800,.9),textLayer('/ 100',c.pad+d*.60,c.H*.52,d*.30,24,c.t.muted,'Space Mono',800,1),textLayer('HIGH CONFIDENCE',c.pad+c.inner*.62,c.H*.31,c.inner*.32,30,c.t.navy,'Sora',800,1),textLayer('primary source\ncurrent metric\nclear timeline',c.pad+c.inner*.62,c.H*.42,c.inner*.32,22,c.t.ink,'Space Mono',700,1.65),textLayer('Never hide uncertainty. Name it.',c.pad,c.H*.80,c.inner,26,c.t.coral,'Sora',700,1)];}}),
+    layout({id:'product-exploded',name:'Exploded Product',category:'product',tags:['product','exploded','layers'],note:'Three separated product layers reveal how the system works.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad+c.inner*.16,w=c.inner*.60,h=c.H*.16;return [background(c,c.t.paper),textLayer('PRODUCT / EXPLODED VIEW',c.pad,c.H*.07,c.inner,21,c.t.blue,'Space Mono',800,1),textLayer('how the pieces\nactually work',c.pad,c.H*.12,c.inner,64,c.t.ink,'Sora',800,.96)].concat([0,1,2].map(function(i){return panel(x+i*c.inner*.05,c.H*(.39+i*.15),w,h,[c.t.bg,c.t.navy,c.t.gold][i],8,c.t.ink,3);})).concat([textLayer('01  RESEARCH INPUT',x+28,c.H*.43,w-56,22,c.t.ink,'Space Mono',800,1),textLayer('02  WRITING ENGINE',x+c.inner*.05+28,c.H*.58,w-56,22,c.t.paper,'Space Mono',800,1),textLayer('03  EDITABLE DESIGN',x+c.inner*.10+28,c.H*.73,w-56,22,c.t.ink,'Space Mono',800,1),svgLayer('0 0 80 180','<path d="M40 3V176M28 16L40 3L52 16M28 163L40 176L52 163" fill="none" stroke="'+c.t.coral+'" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>',c.pad+c.inner*.82,c.H*.39,c.inner*.08,2.25)]);}}),
+    layout({id:'feature-spotlight',name:'Feature Spotlight',category:'product',tags:['feature','spotlight','product'],note:'A single product feature gets a stage and supporting proof.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),d=c.inner*.36;return [background(c,c.t.ink),textLayer('FEATURE SPOTLIGHT',c.pad,c.H*.08,c.inner,21,c.t.mint,'Space Mono',800,1),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="44" fill="'+c.t.navy+'" stroke="'+c.t.mint+'" stroke-width="4"/><rect x="24" y="24" width="52" height="52" rx="10" fill="'+c.t.paper+'"/><path d="M35 55L46 66L67 37" fill="none" stroke="'+c.t.blue+'" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>',c.pad,c.H*.25,d,1),textLayer('EDITABLE\nBY DEFAULT',c.pad+c.inner*.44,c.H*.26,c.inner*.51,65,c.t.paper,'Archivo Black',800,.9),textLayer('Every generated layer stays movable, resizable, and reusable.',c.pad+c.inner*.44,c.H*.51,c.inner*.47,27,c.t.soft,'Sora',600,1.35),line(c.pad,c.H*.74,c.inner,8,c.t.mint,5),textLayer('PRODUCT PROOF · LIVE TODAY',c.pad,c.H*.78,c.inner,20,c.t.mint,'Space Mono',800,1)];}}),
+    layout({id:'browser-dossier',name:'Browser Dossier',category:'product',tags:['browser','dossier','source'],note:'A browser frame becomes a structured project dossier.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad,y=c.H*.13,w=c.inner,h=c.H*.69;return [background(c,c.t.bg),panel(x,y,w,h,c.t.paper,12,c.t.ink,3),panel(x,y,w,c.H*.09,c.t.navy,12),svgLayer('0 0 100 30','<circle cx="12" cy="15" r="6" fill="'+c.t.red+'"/><circle cx="31" cy="15" r="6" fill="'+c.t.gold+'"/><circle cx="50" cy="15" r="6" fill="'+c.t.mint+'"/><rect x="65" y="8" width="30" height="14" rx="7" fill="'+c.t.soft+'"/>',x+20,y+20,w*.22,.3),textLayer('PROJECT.DOSSIER',x+w*.32,y+32,w*.55,18,c.t.paper,'Space Mono',800,1),textLayer('THE PROJECT\nAT A GLANCE',x+42,y+c.H*.14,w*.56,64,c.t.ink,'Sora',800,.94),panel(x+w*.68,y+c.H*.15,w*.24,c.H*.20,c.t.bg,8),textLayer('STATUS\nLIVE',x+w*.71,y+c.H*.19,w*.18,25,c.t.blue,'Space Mono',800,1.4),line(x+42,y+c.H*.39,w-84,8,c.t.soft,4),textLayer('01  WHAT IT DOES\n02  WHO USES IT\n03  WHAT CHANGED\n04  WHY IT MATTERS',x+42,y+c.H*.44,w-84,23,c.t.navy,'Space Mono',700,1.62)];}}),
+    layout({id:'app-teardown',name:'App Teardown',category:'product',tags:['app','teardown','ui'],note:'An annotated interface skeleton for product critique.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad+c.inner*.12,y=c.H*.17,w=c.inner*.63,h=c.H*.60;return [background(c,c.t.paper),textLayer('PRODUCT TEARDOWN / 01',c.pad,c.H*.07,c.inner,21,c.t.blue,'Space Mono',800,1),panel(x,y,w,h,c.t.bg,16,c.t.ink,3),panel(x+20,y+22,w-40,c.H*.09,c.t.navy,8),panel(x+20,y+c.H*.15,w*.28,c.H*.31,c.t.paper,8,c.t.soft,2),panel(x+w*.34,y+c.H*.15,w*.58,c.H*.13,c.t.paper,8,c.t.soft,2),panel(x+w*.34,y+c.H*.31,w*.58,c.H*.15,c.t.paper,8,c.t.soft,2),svgLayer('0 0 150 80','<path d="M5 40H134M123 28L136 40L123 52" fill="none" stroke="'+c.t.coral+'" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>',x+w*.61,y+c.H*.09,w*.35,.533),textLayer('NAV',x+42,y+50,w*.25,18,c.t.paper,'Space Mono',800,1),textLayer('1',x-35,y+c.H*.18,45,30,c.t.coral,'Archivo Black',800,1),textLayer('2',x+w+10,y+c.H*.32,45,30,c.t.coral,'Archivo Black',800,1),textLayer('3',x+w*.72,y+h+18,45,30,c.t.coral,'Archivo Black',800,1)];}}),
+    layout({id:'architecture-map',name:'Architecture Map',category:'product',tags:['architecture','nodes','system'],note:'A central product connected to four real system components.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),cx=c.W*.50,cy=c.H*.49,nodeW=c.inner*.25,nodeH=c.H*.12;const positions=[[c.pad,c.H*.19],[c.pad+c.inner*.75,c.H*.19],[c.pad,c.H*.68],[c.pad+c.inner*.75,c.H*.68]];return [background(c,c.t.bg),textLayer('SYSTEM MAP',c.pad,c.H*.07,c.inner,22,c.t.blue,'Space Mono',800,1),svgLayer('0 0 100 100','<path d="M50 50L15 20M50 50L85 20M50 50L15 80M50 50L85 80" stroke="'+c.t.soft+'" stroke-width="4" stroke-dasharray="7 6"/><circle cx="50" cy="50" r="22" fill="'+c.t.navy+'" stroke="'+c.t.ink+'" stroke-width="4"/>',c.pad+c.inner*.20,c.H*.18,c.inner*.60,1)].concat(positions.map(function(p,i){return panel(p[0],p[1],nodeW,nodeH,[c.t.paper,c.t.gold,c.t.mint,c.t.paper][i],9,c.t.ink,3);})).concat(['RESEARCH','WRITER','BUILDER','EXPORT'].map(function(label,i){return textLayer(label,positions[i][0]+16,positions[i][1]+nodeH*.34,nodeW-32,18,c.t.ink,'Space Mono',800,1);})).concat([textLayer('CMVNG',cx-c.inner*.10,cy-16,c.inner*.20,25,c.t.paper,'Archivo Black',800,1)]);}}),
+    layout({id:'workflow-lanes',name:'Workflow Lanes',category:'product',tags:['workflow','process','lanes'],note:'Three horizontal lanes show movement from input to output.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),top=c.H*.21,laneH=c.H*.16;return [background(c,c.t.paper),textLayer('FROM LINK TO DESIGN',c.pad,c.H*.08,c.inner,46,c.t.ink,'Sora',800,1)].concat(['01  RESEARCH','02  WRITE','03  DESIGN'].flatMap(function(label,i){const y=top+i*(laneH+c.H*.055);return [panel(c.pad,y,c.inner,laneH,i===1?c.t.navy:c.t.bg,9,c.t.ink,2),textLayer(label,c.pad+28,y+laneH*.35,c.inner*.35,22,i===1?c.t.paper:c.t.navy,'Space Mono',800,1),svgLayer('0 0 160 40','<path d="M4 20H149M137 7L151 20L137 33" fill="none" stroke="'+(i===1?c.t.mint:c.t.blue)+'" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>',c.pad+c.inner*.49,y+laneH*.28,c.inner*.37,.25)];})).concat([textLayer('one connected creative system',c.pad,c.H*.86,c.inner,21,c.t.coral,'Space Mono',800,1)]);}}),
+    layout({id:'reaction-split',name:'Reaction Split',category:'social',tags:['reaction','split','social'],note:'A creator reaction and project context share unequal halves.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),left=c.inner*.38;return [background(c,c.t.bg),panel(c.pad,c.H*.13,left,c.H*.70,c.t.navy,12),panel(c.pad+left+c.inner*.05,c.H*.13,c.inner-left-c.inner*.05,c.H*.70,c.t.paper,12,c.t.soft,2),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="43" fill="'+c.t.gold+'" stroke="'+c.t.ink+'" stroke-width="5"/><circle cx="36" cy="44" r="5" fill="'+c.t.ink+'"/><circle cx="64" cy="44" r="5" fill="'+c.t.ink+'"/><path d="M32 66Q50 82 68 66" fill="none" stroke="'+c.t.ink+'" stroke-width="6" stroke-linecap="round"/>',c.pad+left*.16,c.H*.23,left*.68,1),textLayer('@CREATOR',c.pad+28,c.H*.62,left-56,19,c.t.mint,'Space Mono',800,1),textLayer('“wait—\nthis is live?”',c.pad+28,c.H*.67,left-56,37,c.t.paper,'Instrument Serif',500,1.03,{fst:'italic'}),textLayer('THE CONTEXT',c.pad+left+c.inner*.05+34,c.H*.21,c.inner-left-c.inner*.05-68,20,c.t.blue,'Space Mono',800,1),textLayer('yes. and the\nproduct is better\nthan the narrative.',c.pad+left+c.inner*.05+34,c.H*.29,c.inner-left-c.inner*.05-68,54,c.t.ink,'Sora',800,.98),line(c.pad+left+c.inner*.05+34,c.H*.60,c.inner-left-c.inner*.05-68,8,c.t.gold,6),textLayer('source · feature · why now',c.pad+left+c.inner*.05+34,c.H*.66,c.inner-left-c.inner*.05-68,20,c.t.muted,'Space Mono',700,1)];}}),
+    layout({id:'quote-impact',name:'Quote Impact',category:'social',tags:['quote','impact','voice'],note:'An oversized quote mark breaks into a focused statement.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,c.t.navy),textLayer('“',c.pad-c.W*.02,c.H*.06,c.W*.35,300,c.t.blue,'Instrument Serif',400,.7),textLayer('say less.\nmean more.',c.pad+c.inner*.14,c.H*.28,c.inner*.72,90,c.t.paper,'Instrument Serif',500,.95,{fst:'italic'}),line(c.pad+c.inner*.14,c.H*.58,c.inner*.24,9,c.t.mint,6),textLayer('@cmvng / thinking in public',c.pad+c.inner*.14,c.H*.63,c.inner*.62,21,c.t.mint,'Space Mono',800,1),textLayer('QUOTE / REACTION / OPINION',c.pad,c.H*.87,c.inner,17,c.t.soft,'Space Mono',700,1)];}}),
+    layout({id:'thread-stack',name:'Thread Stack',category:'social',tags:['thread','cards','sequence'],note:'Three offset post cards reveal a story sequence.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad+c.inner*.11,w=c.inner*.78,h=c.H*.22;return [background(c,c.t.ink),textLayer('MINI THREAD / 03 POSTS',c.pad,c.H*.06,c.inner,20,c.t.mint,'Space Mono',800,1)].concat([0,1,2].map(function(i){return panel(x+i*c.inner*.035,c.H*(.15+i*.235),w,h,[c.t.paper,c.t.bg,c.t.gold][i],10,c.t.soft,2);})).concat(['THE HOOK','THE RECEIPT','THE TAKEAWAY'].map(function(label,i){return textLayer('0'+(i+1)+'  '+label,x+28+i*c.inner*.035,c.H*(.19+i*.235),w-56,22,c.t.navy,'Space Mono',800,1);})).concat(['Start with the strange detail.','Show the fact that earns it.','Explain why the reader should care.'].map(function(label,i){return textLayer(label,x+28+i*c.inner*.035,c.H*(.24+i*.235),w-56,29,c.t.ink,'Sora',700,1.22);}));}}),
+    layout({id:'hot-take-stamp',name:'Hot Take Stamp',category:'culture',tags:['take','stamp','opinion'],note:'A stamped opinion card that feels authored, not templated.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,'#F7F2E8'),panel(c.pad,c.H*.14,c.inner,c.H*.65,c.t.paper,2,c.t.ink,3),textLayer('HOT TAKE',c.pad+35,c.H*.20,c.inner-70,25,c.t.red,'Space Mono',800,1),textLayer('the roadmap\nis not the product.',c.pad+35,c.H*.29,c.inner-70,74,c.t.ink,'Archivo Black',800,.92),textLayer('Judge what people can use today.',c.pad+35,c.H*.57,c.inner*.66,31,c.t.navy,'Sora',700,1.25),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="42" fill="none" stroke="'+c.t.red+'" stroke-width="6"/><circle cx="50" cy="50" r="31" fill="none" stroke="'+c.t.red+'" stroke-width="3" stroke-dasharray="5 5"/><path d="M28 53L43 67L72 33" fill="none" stroke="'+c.t.red+'" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>',c.pad+c.inner*.69,c.H*.60,c.inner*.23,1,{rot:-12}),textLayer('STAMPED / CMVNG',c.pad+35,c.H*.72,c.inner*.55,18,c.t.muted,'Space Mono',800,1)];}}),
+    layout({id:'culture-zine',name:'Culture Zine',category:'culture',tags:['zine','collage','culture'],note:'Torn paper, halftone, and rotated type make a tactile culture page.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,c.t.gold),svgLayer('0 0 180 70','<path d="M5 10L19 15L31 7L43 14L57 6L71 13L86 7L101 15L116 5L130 13L145 7L158 15L175 9V60L160 56L147 64L132 57L116 65L101 58L84 64L69 56L53 65L38 58L21 64L5 58Z" fill="'+c.t.paper+'" stroke="'+c.t.ink+'" stroke-width="3"/>',c.pad,c.H*.12,c.inner,.389),textLayer('TIMELINE\nENERGY',c.pad+c.inner*.08,c.H*.18,c.inner*.76,100,c.t.ink,'Archivo Black',800,.82,{rot:-4}),panel(c.pad+c.inner*.08,c.H*.48,c.inner*.38,c.H*.24,c.t.blue,0,c.t.ink,3),textLayer('NO\nFLUFF',c.pad+c.inner*.12,c.H*.53,c.inner*.30,48,c.t.paper,'Archivo Black',800,.9),svgLayer('0 0 100 100','<defs><pattern id="zineDots" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="4" cy="4" r="4" fill="'+c.t.ink+'"/></pattern></defs><circle cx="50" cy="50" r="46" fill="url(#zineDots)"/>',c.pad+c.inner*.58,c.H*.46,c.inner*.29,1),textLayer('JUST SIGNAL.',c.pad+c.inner*.34,c.H*.75,c.inner*.56,40,c.t.ink,'Space Mono',800,1,{rot:3})];}}),
+    layout({id:'manifesto-strips',name:'Manifesto Strips',category:'culture',tags:['manifesto','strips','poster'],note:'Four staggered strips build a rhythmic statement.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),labels=['RESEARCH','WITH CARE','WRITE WITH','CONVICTION'];return [background(c,c.t.bg),textLayer('CMVNG MANIFESTO / 01',c.pad,c.H*.07,c.inner,20,c.t.blue,'Space Mono',800,1)].concat(labels.flatMap(function(label,i){const x=c.pad+(i%2)*c.inner*.09,y=c.H*(.16+i*.165),w=c.inner*.80;return [panel(x,y,w,c.H*.13,[c.t.ink,c.t.blue,c.t.gold,c.t.mint][i],0),textLayer(label,x+30,y+c.H*.032,w-60,53,i<2?c.t.paper:c.t.ink,'Archivo Black',800,.9)];})).concat([textLayer('then make the idea visible.',c.pad,c.H*.86,c.inner,24,c.t.muted,'Sora',700,1)]);}}),
+    layout({id:'launch-countdown',name:'Launch Countdown',category:'launch',tags:['countdown','launch','date'],note:'A cinematic countdown card with real launch furniture.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,c.t.ink),textLayer('LAUNCH SEQUENCE',c.pad,c.H*.08,c.inner,21,c.t.mint,'Space Mono',800,1),textLayer('03',c.pad,c.H*.19,c.inner,245,c.t.paper,'Archivo Black',800,.75),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="44" fill="none" stroke="'+c.t.blue+'" stroke-width="5" stroke-dasharray="10 8"/><path d="M50 8V50L80 68" fill="none" stroke="'+c.t.mint+'" stroke-width="6" stroke-linecap="round"/>',c.pad+c.inner*.66,c.H*.22,c.inner*.27,1),line(c.pad,c.H*.58,c.inner,12,c.t.blue,8),textLayer('DAYS UNTIL THE PRODUCT GOES LIVE',c.pad,c.H*.63,c.inner,28,c.t.paper,'Sora',800,1),textLayer('DATE · TIME · DESTINATION · SOURCE',c.pad,c.H*.75,c.inner,20,c.t.soft,'Space Mono',800,1),textLayer('SET REMINDER →',c.pad,c.H*.84,c.inner,23,c.t.mint,'Space Mono',800,1)];}}),
+    layout({id:'roadmap-orbit',name:'Roadmap Orbit',category:'launch',tags:['roadmap','orbit','milestones'],note:'Milestones orbit the live product instead of sitting in a generic list.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),d=c.inner*.66,x=c.pad+c.inner*.17,y=c.H*.18;return [background(c,c.t.bg),textLayer('ROADMAP / REAL STATUS',c.pad,c.H*.07,c.inner,21,c.t.blue,'Space Mono',800,1),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="39" fill="none" stroke="'+c.t.soft+'" stroke-width="3"/><circle cx="50" cy="50" r="25" fill="'+c.t.navy+'"/><circle cx="50" cy="11" r="9" fill="'+c.t.mint+'" stroke="'+c.t.ink+'" stroke-width="3"/><circle cx="84" cy="69" r="9" fill="'+c.t.gold+'" stroke="'+c.t.ink+'" stroke-width="3"/><circle cx="16" cy="69" r="9" fill="'+c.t.coral+'" stroke="'+c.t.ink+'" stroke-width="3"/>',x,y,d,1),textLayer('LIVE',x+d*.38,y+d*.46,d*.24,29,c.t.paper,'Archivo Black',800,1),textLayer('01 TEST',c.pad,c.H*.27,c.inner*.22,20,c.t.navy,'Space Mono',800,1),textLayer('02 SHIP',c.pad+c.inner*.78,c.H*.60,c.inner*.22,20,c.t.navy,'Space Mono',800,1),textLayer('03 SCALE',c.pad,c.H*.72,c.inner*.26,20,c.t.navy,'Space Mono',800,1),textLayer('plan less. verify more.',c.pad,c.H*.87,c.inner,24,c.t.coral,'Sora',700,1)];}}),
+    layout({id:'event-ticket',name:'Event Ticket',category:'launch',tags:['ticket','event','spaces'],note:'A perforated ticket for launches, spaces, and live sessions.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad,y=c.H*.21,w=c.inner,h=c.H*.52,stub=w*.25;return [background(c,c.t.bg),panel(x,y,w,h,c.t.paper,10,c.t.ink,3),svgLayer('0 0 20 100','<path d="M10 3V97" fill="none" stroke="'+c.t.ink+'" stroke-width="3" stroke-dasharray="7 7"/>',x+stub-3,y+15,6,(h-30)/6),textLayer('ADMIT\nONE',x+28,y+45,stub-56,34,c.t.blue,'Archivo Black',800,.9,{rot:-90}),textLayer('CMVNG\nLIVE SESSION',x+stub+45,y+48,w-stub-90,67,c.t.ink,'Archivo Black',800,.9),textLayer('RESEARCH → WRITE → DESIGN',x+stub+45,y+h*.48,w-stub-90,22,c.t.blue,'Space Mono',800,1),textLayer('29 AUG · 18:00 WAT',x+stub+45,y+h*.62,w-stub-90,25,c.t.navy,'Sora',800,1),svgLayer('0 0 100 100','<path d="M10 10H90V90H10Z" fill="none" stroke="'+c.t.ink+'" stroke-width="7"/><path d="M20 20H40V40H20ZM60 20H80V40H60ZM20 60H40V80H20ZM50 50H80V80H50Z" fill="'+c.t.ink+'"/>',x+w*.79,y+h*.69,w*.12,1),textLayer('KEEP THIS TICKET',c.pad,c.H*.80,c.inner,18,c.t.muted,'Space Mono',800,1)];}}),
+    layout({id:'drop-poster',name:'Drop Poster',category:'launch',tags:['drop','poster','release'],note:'An off-grid release poster with scale and edge.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme);return [background(c,c.t.coral),textLayer('NEW',c.pad-c.W*.03,c.H*.10,c.W*.60,176,c.t.ink,'Archivo Black',800,.8,{rot:-7}),textLayer('DROP',c.pad+c.inner*.29,c.H*.28,c.W*.68,176,c.t.paper,'Archivo Black',800,.8,{rot:5}),panel(c.pad,c.H*.58,c.inner,c.H*.19,c.t.ink,0),textLayer('PRODUCT V5 / LIVE NOW',c.pad+30,c.H*.62,c.inner-60,35,c.t.mint,'Space Mono',800,1),textLayer('100+ authored creative systems',c.pad+30,c.H*.69,c.inner-60,24,c.t.paper,'Sora',700,1),svgLayer('0 0 100 100','<path d="M50 4L61 18L78 12L80 31L96 40L85 55L92 72L73 77L66 94L50 84L34 94L27 77L8 72L15 55L4 40L20 31L22 12L39 18Z" fill="'+c.t.gold+'" stroke="'+c.t.ink+'" stroke-width="4"/>',c.pad+c.inner*.72,c.H*.76,c.inner*.22,1,{rot:11}),textLayer('GO',c.pad+c.inner*.78,c.H*.83,c.inner*.10,31,c.t.ink,'Archivo Black',800,1,{rot:11})];}}),
+    layout({id:'changelog-grid',name:'Changelog Grid',category:'launch',tags:['changelog','release','grid'],note:'A release note built from modular shipped/next cells.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),top=c.H*.19,w=c.inner*.47,g=c.inner*.06,h=c.H*.24;return [background(c,c.t.paper),textLayer('CHANGELOG / V5.0',c.pad,c.H*.07,c.inner,24,c.t.ink,'Sora',800,1),textLayer('SHIPPED TODAY',c.pad,c.H*.125,c.inner,20,c.t.blue,'Space Mono',800,1),panel(c.pad,top,w,h,c.t.navy,8),panel(c.pad+w+g,top,w,h,c.t.bg,8,c.t.soft,2),panel(c.pad,top+h+c.H*.06,w,h,c.t.gold,8),panel(c.pad+w+g,top+h+c.H*.06,w,h,c.t.mint,8),textLayer('01\nCHARACTERS',c.pad+28,top+30,w-56,27,c.t.paper,'Space Mono',800,1.35),textLayer('02\nDOODLES',c.pad+w+g+28,top+30,w-56,27,c.t.navy,'Space Mono',800,1.35),textLayer('03\nTYPE SYSTEMS',c.pad+28,top+h+c.H*.06+30,w-56,27,c.t.ink,'Space Mono',800,1.35),textLayer('04\nSPECIAL DESIGNS',c.pad+w+g+28,top+h+c.H*.06+30,w-56,27,c.t.ink,'Space Mono',800,1.35),textLayer('every layer remains editable →',c.pad,c.H*.84,c.inner,22,c.t.coral,'Space Mono',800,1)];}}),
+    layout({id:'announcement-window',name:'Announcement Window',category:'launch',tags:['announcement','window','product'],note:'A high-polish announcement inside a layered desktop window.',build:function(rawFmt,rawTheme){const c=layoutContext(rawFmt,rawTheme),x=c.pad,y=c.H*.12,w=c.inner,h=c.H*.70;return [background(c,c.t.ink),panel(x+22,y+24,w,h,c.t.blue,13),panel(x,y,w,h,c.t.paper,13,c.t.ink,3),panel(x,y,w,c.H*.085,c.t.bg,13,c.t.ink,2),svgLayer('0 0 100 30','<circle cx="12" cy="15" r="6" fill="'+c.t.red+'"/><circle cx="32" cy="15" r="6" fill="'+c.t.gold+'"/><circle cx="52" cy="15" r="6" fill="'+c.t.mint+'"/>',x+18,y+18,w*.18,.3),textLayer('STUDIO / ANNOUNCEMENT',x+w*.30,y+32,w*.60,17,c.t.muted,'Space Mono',800,1),textLayer('THE CREATIVE\nSYSTEM IS LIVE.',x+45,y+c.H*.17,w-90,76,c.t.ink,'Archivo Black',800,.9),textLayer('More characters. More doodles. Better type. Real compositions.',x+45,y+c.H*.43,w*.68,28,c.t.navy,'Sora',650,1.32),panel(x+45,y+c.H*.57,w*.43,c.H*.09,c.t.navy,7),textLayer('OPEN THE BUILDER →',x+70,y+c.H*.60,w*.38,20,c.t.paper,'Space Mono',800,1),svgLayer('0 0 100 100','<circle cx="50" cy="50" r="43" fill="'+c.t.mint+'"/><path d="M29 51L44 66L73 34" fill="none" stroke="'+c.t.ink+'" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>',x+w*.72,y+c.H*.53,w*.17,1),textLayer('CMVNG / V5',c.pad,c.H*.88,c.inner,18,c.t.mint,'Space Mono',800,1)];}})
+  ];
+
+  function findById(collection, id) {
+    return collection.find(function (item) { return item.id === id; }) || null;
+  }
+
+  function placement(rawFmt, kind, options) {
+    const f=fmt(rawFmt),o=options||{};
+    if(kind==='character') return {x:o.x == null ? px(f.w*.61) : o.x,y:o.y == null ? px(f.h*.40) : o.y,w:o.w == null ? px(f.w*.29) : o.w};
+    return {x:o.x == null ? px(f.w*.62) : o.x,y:o.y == null ? px(f.h*.16) : o.y,w:o.w == null ? px(f.w*.25) : o.w};
+  }
+
+  function instantiate(kind, id, rawFmt, options) {
+    const opts=options||{},f=fmt(rawFmt),t=theme(opts.theme);
+    if(kind==='character'||kind==='characters') {
+      const item=findById(characters,id); if(!item)return [];
+      const p=placement(rawFmt,'character',opts);
+      return [svgLayer(item.vb,item.inner,p.x,p.y,p.w,item.ar,{cmvngAssetId:item.id,cmvngAssetKind:'character'})];
+    }
+    if(kind==='doodle'||kind==='doodles') {
+      const item=findById(doodles,id); if(!item)return [];
+      const p=placement(rawFmt,'doodle',opts);
+      return [svgLayer(item.vb,item.inner,p.x,p.y,p.w,item.ar,{cmvngAssetId:item.id,cmvngAssetKind:'doodle'})];
+    }
+    if(kind==='text'||kind==='textStructure'||kind==='textStructures') {
+      const item=findById(textStructures,id); return item ? item.build([f.id,f.w,f.h],t).map(safeClone) : [];
+    }
+    if(kind==='layout'||kind==='specialLayout'||kind==='specialLayouts') {
+      const item=findById(specialLayouts,id); return item ? item.build([f.id,f.w,f.h],t).map(safeClone) : [];
+    }
+    return [];
+  }
+
+  function catalog(collection) {
+    return collection.map(function(item){return {id:item.id,name:item.name,category:item.category,tags:safeClone(item.tags),note:item.note,vb:item.vb,ar:item.ar,inner:item.inner};});
+  }
+
+  function validate() {
+    const groups={characters:characters,doodles:doodles,textStructures:textStructures,specialLayouts:specialLayouts};
+    const errors=[];
+    Object.keys(groups).forEach(function(name){
+      const ids={};
+      groups[name].forEach(function(item){
+        if(!item.id||!item.name||!item.category) errors.push(name+': incomplete metadata');
+        if(ids[item.id]) errors.push(name+': duplicate id '+item.id);
+        ids[item.id]=1;
+      });
+    });
+    if(characters.length<24)errors.push('characters: expected at least 24');
+    if(doodles.length<48)errors.push('doodles: expected at least 48');
+    if(textStructures.length<24)errors.push('textStructures: expected at least 24');
+    if(specialLayouts.length<30)errors.push('specialLayouts: expected at least 30');
+    return {ok:errors.length===0,errors:errors,counts:{characters:characters.length,doodles:doodles.length,textStructures:textStructures.length,specialLayouts:specialLayouts.length,total:characters.length+doodles.length+textStructures.length+specialLayouts.length}};
+  }
+
+  const validation=validate();
+  if(!validation.ok&&typeof console!=='undefined'&&console.error) console.error('CMVNG Creative Pack validation failed',validation.errors);
+
+  window.CMVNG_CREATIVE_PACK_V5={
+    version:VERSION,
+    palette:safeClone(DEFAULT_THEME),
+    counts:safeClone(validation.counts),
+    validation:validation,
+    characters:characters,
+    doodles:doodles,
+    textStructures:textStructures,
+    specialLayouts:specialLayouts,
+    getCatalog:function(){return {characters:catalog(characters),doodles:catalog(doodles),textStructures:catalog(textStructures),specialLayouts:catalog(specialLayouts)};},
+    find:function(kind,id){const map={characters:characters,character:characters,doodles:doodles,doodle:doodles,textStructures:textStructures,text:textStructures,specialLayouts:specialLayouts,layout:specialLayouts};return findById(map[kind]||[],id);},
+    instantiate:instantiate
+  };
+})();
+
+</script>
 <script>
 (function () {
   'use strict';
 
   if (typeof T === 'undefined' || !window.__bapi) return;
 
-  const ENH_VERSION = '4.0.0';
+  const ENH_VERSION = '5.0.0';
   const TEMPLATE_DRAFT_PREFIX = 'banger.template.';
   const BUILDER_DRAFT_KEY = 'banger.builder.autosave.v2';
   const BRAND_LOGO = '/assets/cmvng-logo.png';
@@ -714,7 +1009,7 @@
     try {
       const url = new URL(/^https?:\/\//i.test(value) ? value : 'https://' + value);
       const host = url.hostname.toLowerCase().replace(/^www\./, '');
-      if (host === 'x.com' || host === 'twitter.com') {
+      if (/(^|\.)(x\.com|twitter\.com)$/.test(host)) {
         const handle = url.pathname.split('/').filter(Boolean)[0] || '';
         if (!handle || /^(home|explore|search|i|settings)$/i.test(handle)) {
           return {url:'', warning:'That is only the X homepage. Paste the project’s exact profile, website, docs, or a specific post.'};
@@ -782,7 +1077,7 @@
       const url = new URL(raw);
       const host = url.hostname.toLowerCase().replace(/^www\./, '');
       const parts = url.pathname.split('/').filter(Boolean);
-      if (/^(x|twitter)\.com$/.test(host) && parts[0]) return '@' + parts[0];
+      if (/(^|\.)(x\.com|twitter\.com)$/.test(host) && parts[0]) return '@' + parts[0];
       return host.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     } catch (_) { return 'linked project'; }
   }
@@ -819,7 +1114,16 @@
       '… checking the official source, product details, live numbers and current signals before writing.</div>';
     setWriterFlow(0);
     try {
-      const session = sessionStorage.getItem('banger_session') || '';
+      // The native writer captures this session at page load. Prefer that same
+      // sessionStorage value, then mirror it to localStorage for refresh recovery.
+      let session = '';
+      try {
+        session = sessionStorage.getItem('banger_session') || localStorage.getItem('banger_session') || '';
+        if (session) {
+          sessionStorage.setItem('banger_session', session);
+          localStorage.setItem('banger_session', session);
+        }
+      } catch (_) {}
       const response = await fetch('/gather', {method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({proj:project,root:source.url,session})});
       const result = await response.json();
@@ -897,7 +1201,15 @@
         if (projectName) {
           write.textContent = 'researching before writing…';
           const researched = await smartResearchProject(false);
-          const detailedInput = originalTopic.length > 180 || /\d/.test(originalTopic);
+          // A URL is not factual material. In particular, an X status ID must
+          // never unlock the paid writer after research fails.
+          const factText = originalTopic
+            .replace(/(?:https?:\/\/[^\s<>"']+|(?:www\.)?[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/ig, ' ')
+            .replace(/\s+/g, ' ').trim();
+          const labeledMetric = /\b(?:tvl|revenue|users?|customers?|volume|funding|raised|price|market\s*cap|transactions?|downloads?|launched?|founded|release(?:d)?|date)\b[^.\n]{0,70}\$?\d[\d,.]*(?:\s?[kmbt%])?/i.test(factText);
+          const factLines = originalTopic.split(/\n+/).map(line => line.replace(/https?:\/\/\S+/ig, '').trim())
+            .filter(line => line.length > 18 && /[A-Za-z]/.test(line) && /\d/.test(line));
+          const detailedInput = factText.length > 180 || labeledMetric || factLines.length >= 2;
           if (!researched && !hasScreens && !detailedInput) return;
           if (topic) {
             const source = normaliseProjectSource(root.value).url;
@@ -2096,6 +2408,271 @@
     sheet.classList.add('on');
   }
 
+  /* ---------- CMVNG Signal Workshop v5 ---------- */
+  const CREATIVE_V5_THEMES = [
+    {id:'signal',name:'signal',theme:{bg:'#EDF3FF',paper:'#FFFFFF',ink:'#101C33',blue:'#2E6BFF',navy:'#123A9E',soft:'#BFD1F5',mint:'#68F0B2',gold:'#FFC53D',coral:'#FF6C43',red:'#FF4D45',muted:'#61769D'}},
+    {id:'night',name:'night',theme:{bg:'#071124',paper:'#101C33',ink:'#F8FAFF',blue:'#4C7EFF',navy:'#BFD1F5',soft:'#20365F',mint:'#68F0B2',gold:'#E6B84A',coral:'#FF7B55',red:'#FF665E',muted:'#9CAFD1'}},
+    {id:'paper',name:'paper',theme:{bg:'#E7DED0',paper:'#FFFDF7',ink:'#201A16',blue:'#2E6BFF',navy:'#342821',soft:'#D8CCBB',mint:'#18B27B',gold:'#D7A936',coral:'#E5532D',red:'#D94444',muted:'#74685E'}},
+    {id:'acid',name:'acid',theme:{bg:'#D8FF47',paper:'#F7FFD7',ink:'#101C18',blue:'#2E6BFF',navy:'#101C18',soft:'#B6D836',mint:'#18B27B',gold:'#FFC53D',coral:'#FF6C43',red:'#F14D4D',muted:'#4E6135'}}
+  ];
+  let creativeV5Theme = 'signal';
+  let creativeV5Mode = 'replace';
+  let creativeV5Tab = 'designs';
+  let creativeV5Filter = 'all';
+  let creativeV5Limit = 24;
+
+  function creativePackV5() {
+    return window.CMVNG_CREATIVE_PACK_V5 || null;
+  }
+
+  function activeCreativeTheme() {
+    return (CREATIVE_V5_THEMES.find(item => item.id === creativeV5Theme) || CREATIVE_V5_THEMES[0]).theme;
+  }
+
+  function v5Text(text,x,y,w,size,color,font,weight,lh,extra) {
+    return Object.assign({type:'text',text,x:Math.round(x),y:Math.round(y),w:Math.round(w),size:Math.round(size),color,
+      ff:font || 'Sora',fw:String(weight || 800),lh:String(lh || 1),pre:1}, extra || {});
+  }
+
+  function v5Panel(x,y,w,h,fill,radius,stroke,sw,extra) {
+    return Object.assign({type:'svgraw',vb:'0 0 100 100',inner:'<rect x="2" y="2" width="96" height="96" rx="'+(radius || 0)+'" fill="'+fill+'"'+
+      (stroke ? ' stroke="'+stroke+'" stroke-width="'+(sw || 3)+'"' : '')+'/>',x:Math.round(x),y:Math.round(y),w:Math.round(w),ar:h/Math.max(1,w)},extra || {});
+  }
+
+  function v5Signature(W,H,t) {
+    return [
+      v5Text('CMVNG / SIGNAL WORKSHOP',W*.075,H*.925,W*.62,W*.016,t.muted,'Space Mono',800,1),
+      {type:'img',src:BRAND_LOGO,ar:1,x:Math.round(W*.82),y:Math.round(H*.895),w:Math.round(W*.105),cmvngAssetKind:'brand'}
+    ];
+  }
+
+  function v5DesignCatalog() {
+    const pack=creativePackV5(); if(!pack) return [];
+    const catalog=pack.getCatalog();
+    const layouts=catalog.specialLayouts.map((item,index)=>Object.assign({},item,{id:'design-layout-'+item.id,assetId:item.id,kind:'layout',index,
+      name:item.name,category:item.category || 'design',note:item.note,tags:(item.tags||[]).concat(['complete','layout'])}));
+    const types=catalog.textStructures.map((item,index)=>Object.assign({},item,{id:'design-type-'+item.id,assetId:item.id,kind:'type',index:index+layouts.length,
+      name:item.name+' Story',category:item.category || 'writing',note:item.note,tags:(item.tags||[]).concat(['typography','story'])}));
+    const characters=catalog.characters.map((item,index)=>Object.assign({},item,{id:'design-character-'+item.id,assetId:item.id,kind:'character',index:index+layouts.length+types.length,
+      name:item.name+' Feature',category:item.category || 'character',note:item.note,tags:(item.tags||[]).concat(['character','feature'])}));
+    const doodles=catalog.doodles.slice(0,28).map((item,index)=>Object.assign({},item,{id:'design-doodle-'+item.id,assetId:item.id,kind:'doodle',index:index+layouts.length+types.length+characters.length,
+      name:item.name+' Poster',category:item.category || 'culture',note:item.note,tags:(item.tags||[]).concat(['doodle','poster'])}));
+    return layouts.concat(types,characters,doodles);
+  }
+
+  function buildV5TypeDesign(item,format,t) {
+    const pack=creativePackV5(),W=format[1],H=format[2],i=item.index%6,pad=W*.07;
+    const dark=/terminal|alert|manifesto/i.test(item.assetId) || i===4;
+    const bg=dark?t.ink:t.bg, ink=dark?t.paper:t.ink;
+    const theme=Object.assign({},t,{bg,paper:dark?t.ink:t.paper,ink,navy:dark?t.paper:t.navy,muted:dark?t.soft:t.muted});
+    let decor=[];
+    if(i===0) decor=[v5Panel(pad,H*.10,W-pad*2,H*.78,theme.paper,12,theme.ink,2)];
+    if(i===1) decor=[v5Panel(0,H*.58,W,H*.24,theme.blue,0),v5Panel(pad,H*.11,W*.12,H*.05,theme.coral,0)];
+    if(i===2) decor=[v5Panel(W*.64,H*.08,W*.28,H*.78,theme.soft,0),v5Panel(pad,H*.76,W*.37,H*.06,theme.gold,0)];
+    if(i===3) decor=[v5Panel(pad,H*.10,W-pad*2,H*.72,theme.paper,0,theme.ink,4),v5Panel(pad+24,H*.10,12,H*.72,theme.blue,0)];
+    if(i===4) decor=[v5Panel(pad,H*.11,W-pad*2,H*.69,theme.ink,7,theme.blue,2),v5Panel(W*.73,H*.14,W*.17,H*.10,theme.mint,50)];
+    if(i===5) decor=[v5Panel(pad,H*.12,W*.27,H*.66,theme.navy,0),v5Panel(W*.39,H*.12,W*.54,H*.66,theme.paper,0,theme.ink,2)];
+    return [v5Panel(0,0,W,H,bg,0)].concat(decor,pack.instantiate('text',item.assetId,format,{theme}),v5Signature(W,H,theme));
+  }
+
+  function buildV5CharacterDesign(item,format,t) {
+    const pack=creativePackV5(),W=format[1],H=format[2],i=item.index%5,pad=W*.07;
+    let layers=[v5Panel(0,0,W,H,i===4?t.ink:t.bg,0)];
+    const title=item.name.replace(/ Feature$/,'').toUpperCase();
+    if(i===0) layers=layers.concat([v5Panel(W*.53,0,W*.47,H,t.navy,0),v5Text('CREATOR ROLE · 01',pad,H*.12,W*.40,W*.019,t.blue,'Space Mono',800,1),v5Text(title,pad,H*.22,W*.43,W*.063,t.ink,'Archivo Black',800,.91),v5Text(item.note,pad,H*.57,W*.39,W*.025,t.muted,'Sora',650,1.3)]);
+    if(i===1) layers=layers.concat([v5Panel(pad,H*.12,W-pad*2,H*.28,t.paper,14,t.ink,2),v5Text('“'+item.note+'”',pad+36,H*.18,W-pad*2-72,W*.034,t.ink,'Instrument Serif',500,1.08,{fst:'italic'}),v5Text(title,pad,H*.71,W*.53,W*.045,t.navy,'Sora',800,.95)]);
+    if(i===2) layers=layers.concat([v5Panel(W*.23,H*.21,W*.54,W*.54,t.soft,50,t.ink,3),v5Text('MEET THE',pad,H*.10,W*.35,W*.019,t.coral,'Space Mono',800,1),v5Text(title,pad,H*.72,W-pad*2,W*.052,t.ink,'Archivo Black',800,.9)]);
+    if(i===3) layers=layers.concat([v5Panel(0,H*.16,W,H*.52,t.blue,0),v5Text('ROLE / ACTION / POINT OF VIEW',pad,H*.09,W-pad*2,W*.018,t.muted,'Space Mono',800,1),v5Text(title,pad,H*.72,W-pad*2,W*.055,t.ink,'Sora',800,.95)]);
+    if(i===4) layers=layers.concat([v5Panel(pad,H*.10,W-pad*2,H*.71,t.ink,0,t.soft,2),v5Text('CMVNG CHARACTER STUDY',pad+34,H*.15,W*.45,W*.018,t.mint,'Space Mono',800,1),v5Text(title,pad+34,H*.24,W*.48,W*.057,t.paper,'Archivo Black',800,.9),v5Text(item.note,pad+34,H*.61,W*.45,W*.023,t.soft,'Sora',650,1.3)]);
+    const placements=[{x:W*.58,y:H*.25,w:W*.34},{x:W*.56,y:H*.39,w:W*.34},{x:W*.36,y:H*.27,w:W*.29},{x:W*.59,y:H*.26,w:W*.32},{x:W*.61,y:H*.30,w:W*.28}];
+    return layers.concat(pack.instantiate('character',item.assetId,format,{theme:t,...placements[i]}),v5Signature(W,H,i===4?Object.assign({},t,{muted:t.soft}):t));
+  }
+
+  function buildV5DoodleDesign(item,format,t) {
+    const pack=creativePackV5(),W=format[1],H=format[2],i=item.index%7,pad=W*.07;
+    const label=item.name.replace(/ Poster$/,'').toUpperCase();
+    let layers=[v5Panel(0,0,W,H,i===5?t.ink:t.paper,0)];
+    if(i===0) layers.push(v5Panel(pad,H*.14,W-pad*2,H*.61,t.bg,8,t.ink,3),v5Text('MARK THE SIGNAL',pad+30,H*.20,W*.47,W*.048,t.ink,'Archivo Black',800,.92));
+    if(i===1) layers.push(v5Panel(0,H*.22,W,H*.45,t.blue,0),v5Text(label,pad,H*.10,W-pad*2,W*.047,t.ink,'Archivo Black',800,.9));
+    if(i===2) layers.push(v5Panel(pad,H*.11,W*.34,H*.67,t.navy,0),v5Text('ANNOTATION / 0'+((item.index%9)+1),W*.46,H*.18,W*.42,W*.019,t.blue,'Space Mono',800,1),v5Text(label,W*.46,H*.25,W*.43,W*.055,t.ink,'Sora',800,.94));
+    if(i===3) layers.push(v5Panel(pad,H*.14,W-pad*2,H*.60,t.gold,0,t.ink,4),v5Text(label,pad+35,H*.61,W-pad*2-70,W*.052,t.ink,'Archivo Black',800,.9));
+    if(i===4) layers.push(v5Panel(pad,H*.12,W-pad*2,H*.67,t.bg,18),v5Text('MAKE THE IDEA STICK.',pad+32,H*.17,W*.51,W*.049,t.navy,'Sora',800,.94));
+    if(i===5) layers.push(v5Panel(pad,H*.12,W-pad*2,H*.68,t.ink,5,t.soft,2),v5Text(label,pad+32,H*.18,W*.49,W*.052,t.paper,'Archivo Black',800,.9));
+    if(i===6) layers.push(v5Panel(pad,H*.11,W-pad*2,H*.70,t.paper,0,t.ink,3),v5Panel(pad,H*.11,W-pad*2,H*.08,t.blue,0),v5Text(label,pad+30,H*.24,W*.52,W*.047,t.ink,'Sora',800,.94));
+    const placements=[{x:W*.55,y:H*.30,w:W*.30},{x:W*.35,y:H*.33,w:W*.31},{x:W*.12,y:H*.32,w:W*.24},{x:W*.36,y:H*.25,w:W*.29},{x:W*.57,y:H*.39,w:W*.25},{x:W*.58,y:H*.39,w:W*.24},{x:W*.56,y:H*.46,w:W*.25}];
+    return layers.concat(pack.instantiate('doodle',item.assetId,format,{theme:t,...placements[i]}),v5Text('native mark · movable · scalable',pad,H*.84,W*.60,W*.017,i===5?t.soft:t.muted,'Space Mono',700,1),v5Signature(W,H,i===5?Object.assign({},t,{muted:t.soft}):t));
+  }
+
+  function buildV5Design(item,format) {
+    const pack=creativePackV5(),t=activeCreativeTheme();
+    if(!pack || !item) return [];
+    if(item.kind==='layout') return pack.instantiate('layout',item.assetId,format,{theme:t}).concat(v5Signature(format[1],format[2],t));
+    if(item.kind==='type') return buildV5TypeDesign(item,format,t);
+    if(item.kind==='character') return buildV5CharacterDesign(item,format,t);
+    return buildV5DoodleDesign(item,format,t);
+  }
+
+  function v5Preview(layers,format) {
+    const W=format[1],H=format[2];
+    const nodes=layers.slice(0,18).map(item=>{
+      const x=+item.x||0,y=+item.y||0,w=+item.w||W;
+      if(item.type==='svgraw') return '<svg x="'+x+'" y="'+y+'" width="'+w+'" height="'+(w*(+item.ar||1))+'" viewBox="'+escEnh(item.vb||'0 0 100 100')+'" preserveAspectRatio="none">'+(item.inner||'')+'</svg>';
+      if(item.type==='img') return '<image href="'+escEnh(item.src||'')+'" x="'+x+'" y="'+y+'" width="'+w+'" height="'+(w*(+item.ar||1))+'" preserveAspectRatio="xMidYMid slice"/>';
+      if(item.type==='text') {
+        const lines=String(item.text||'').split('\n'),size=+item.size||28,lh=size*(+item.lh||1.1),rot=+item.rot||0;
+        return '<text x="'+x+'" y="'+(y+size)+'" fill="'+escEnh(item.color||'#101C33')+'" font-family="'+escEnh(item.ff||'Sora')+'" font-size="'+size+'" font-weight="'+escEnh(item.fw||'700')+'"'+(rot?' transform="rotate('+rot+' '+x+' '+y+')"':'')+'>'+lines.map((line,index)=>'<tspan x="'+x+'" dy="'+(index?lh:0)+'">'+escEnh(line)+'</tspan>').join('')+'</text>';
+      }
+      return '';
+    }).join('');
+    return '<svg class="bw-v5-art" viewBox="0 0 '+W+' '+H+'" aria-hidden="true">'+nodes+'</svg>';
+  }
+
+  function v5FavoriteIds() {
+    try { return JSON.parse(localStorage.getItem('cmvng.creative.favorites.v5') || '[]'); } catch (_) { return []; }
+  }
+
+  function v5RecentIds() {
+    try { return JSON.parse(localStorage.getItem('cmvng.creative.recent.v5') || '[]'); } catch (_) { return []; }
+  }
+
+  function rememberV5(id) {
+    const next=[id].concat(v5RecentIds().filter(item=>item!==id)).slice(0,18);
+    try { localStorage.setItem('cmvng.creative.recent.v5',JSON.stringify(next)); } catch (_) {}
+  }
+
+  function toggleV5Favorite(id) {
+    const current=v5FavoriteIds(),next=current.includes(id)?current.filter(item=>item!==id):current.concat(id);
+    try { localStorage.setItem('cmvng.creative.favorites.v5',JSON.stringify(next)); } catch (_) {}
+  }
+
+  function atomicAddV5(layers,description) {
+    const state=builderState(),remaining=Math.max(0,48-state.data.length);
+    if(!layers.length) return;
+    if(layers.length>remaining) {
+      toast(description+' needs '+layers.length+' layers; '+remaining+' are free. Delete layers or use Replace.','warn');
+      return;
+    }
+    const drift=(state.data.length%4)*16;
+    const next=state.data.concat(layers.map(item=>Object.assign({},item,{x:(+item.x||0)+drift,y:(+item.y||0)+drift})));
+    importBuilderState(next,state.format,state.background,next.length-1);
+    applyFoundationLock(); renderBuilderSheet();
+    toast(description+' added · '+layers.length+' editable layers','ok');
+  }
+
+  function useV5Design(item) {
+    const state=builderState(),format=window.__bapi.fmt(),layers=buildV5Design(item,format);
+    if(!layers.length) return;
+    rememberV5(item.id);
+    if(creativeV5Mode==='overlay') {
+      const W=format[1],overlay=layers.filter(layer=>!(layer.type==='svgraw' && (+layer.x||0)===0 && (+layer.y||0)===0 && (+layer.w||0)>=W*.9));
+      atomicAddV5(overlay,item.name); return;
+    }
+    foundationSrc=''; foundationBuilderId=null; foundationLocked=false;
+    originalBuilderDesign={data:clone(layers),format:format[0],background:'transparent',foundationSrc:''};
+    importBuilderState(layers,format[0],'transparent',layers.length-1);
+    renderBuilderSheet();
+    const sheet=document.getElementById('bw_creative_v5'); if(sheet) sheet.classList.remove('on');
+    toast(item.name+' loaded · one-step replace, every layer editable','ok');
+  }
+
+  function useV5Asset(kind,item) {
+    const pack=creativePackV5(),format=window.__bapi.fmt(); if(!pack) return;
+    rememberV5(kind+'-'+item.id);
+    const layers=pack.instantiate(kind,item.id,format,{theme:activeCreativeTheme()});
+    atomicAddV5(layers,item.name);
+  }
+
+  function installCreativeV5Styles() {
+    if(document.getElementById('bw_creative_v5_style')) return;
+    const style=document.createElement('style'); style.id='bw_creative_v5_style'; style.textContent=`
+      #bw_creative_v5{display:none;position:fixed;inset:0;z-index:2500;background:rgba(7,17,36,.63);align-items:flex-end;justify-content:center;backdrop-filter:blur(5px)}
+      #bw_creative_v5.on{display:flex}#bw_creative_v5 .bw-v5-shell{width:min(860px,100%);max-height:94vh;overflow:auto;background:#F7FAFF;border-radius:26px 26px 0 0;box-shadow:0 -28px 70px rgba(7,17,36,.38);padding:0 14px calc(18px + env(safe-area-inset-bottom))}
+      .bw-v5-head{position:sticky;top:0;z-index:8;margin:0 -14px;padding:14px;background:linear-gradient(120deg,#071124,#123A9E 68%,#2E6BFF);color:#fff;display:flex;gap:11px;align-items:center}
+      .bw-v5-head img{width:88px;height:28px;object-fit:cover;border-radius:7px}.bw-v5-head div{min-width:0;flex:1}.bw-v5-head b{display:block;font:800 14px Sora}.bw-v5-head small{display:block;color:#BFD1F5;font:650 8px/1.45 'Space Mono'}
+      .bw-v5-close{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.1);color:#fff;width:38px;height:38px;border-radius:12px;font-size:20px}.bw-v5-proof{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:12px 0}
+      .bw-v5-proof span{padding:8px 5px;border:1px solid #D9E4F5;border-radius:10px;background:#fff;text-align:center;color:#5C719B;font:700 7px 'Space Mono'}.bw-v5-proof b{display:block;color:#123A9E;font:900 13px Sora}
+      .bw-v5-tabs,.bw-v5-filters,.bw-v5-themes{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}.bw-v5-tabs{padding:1px 0 9px}.bw-v5-tabs::-webkit-scrollbar,.bw-v5-filters::-webkit-scrollbar,.bw-v5-themes::-webkit-scrollbar{display:none}
+      .bw-v5-tab,.bw-v5-filter,.bw-v5-theme,.bw-v5-mode{flex:0 0 auto;border:1px solid #D4E0F2;border-radius:999px;background:#fff;color:#5C719B;padding:8px 10px;font:750 8px 'Space Mono'}
+      .bw-v5-tab.on,.bw-v5-filter.on,.bw-v5-theme.on,.bw-v5-mode.on{background:#123A9E;border-color:#123A9E;color:#fff}.bw-v5-toolbar{position:sticky;top:66px;z-index:7;margin:0 -3px 9px;padding:8px 3px;background:rgba(247,250,255,.96);backdrop-filter:blur(8px)}
+      .bw-v5-search{display:flex;gap:7px}.bw-v5-search input{min-width:0;flex:1;border:1px solid #C9D7ED;border-radius:12px;padding:11px;color:#101C33;font:700 10px Sora;outline:none}.bw-v5-count{display:flex;align-items:center;padding:0 10px;border-radius:11px;background:#E9F0FC;color:#123A9E;font:800 8px 'Space Mono'}
+      .bw-v5-options{display:flex;align-items:center;justify-content:space-between;gap:9px;margin:8px 0}.bw-v5-modes{display:flex;gap:5px}.bw-v5-help{color:#7084A9;font:650 8px/1.4 'Space Mono'}
+      .bw-v5-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.bw-v5-card{position:relative;border:1px solid #D6E1F2;border-radius:17px;background:#fff;overflow:hidden;box-shadow:0 17px 32px -28px #071124}
+      .bw-v5-use{display:block;width:100%;border:0;background:#fff;padding:8px;text-align:left}.bw-v5-preview{position:relative;width:100%;aspect-ratio:1/1.05;border-radius:11px;overflow:hidden;background:#EAF1FF}.bw-v5-art{display:block;width:100%;height:100%}
+      .bw-v5-meta{padding:8px 2px 2px}.bw-v5-meta b{display:block;padding-right:28px;color:#101C33;font:800 10px/1.25 Sora}.bw-v5-meta span{display:block;margin-top:4px;min-height:24px;color:#7185AA;font:650 7.5px/1.45 'Space Mono'}.bw-v5-meta i{display:block;margin-top:6px;color:#2E6BFF;font:900 8px Sora;font-style:normal}
+      .bw-v5-fave{position:absolute;right:10px;top:10px;z-index:3;width:29px;height:29px;border:1px solid rgba(255,255,255,.65);border-radius:9px;background:rgba(7,17,36,.76);color:#fff;font-size:15px}.bw-v5-fave.on{background:#FFC53D;color:#101C33}
+      .bw-v5-more{grid-column:1/-1;border:1px dashed #9DBDF9;border-radius:13px;padding:12px;background:#EEF4FF;color:#123A9E;font:800 10px 'Space Mono'}.bw-v5-empty{grid-column:1/-1;padding:34px 14px;text-align:center;color:#7185AA;font:700 10px 'Space Mono'}
+      @media(min-width:700px){.bw-v5-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:420px){.bw-v5-proof{grid-template-columns:repeat(3,1fr)}.bw-v5-proof span:nth-child(n+4){display:none}.bw-v5-toolbar{top:66px}}
+    `; document.head.appendChild(style);
+  }
+
+  function v5TabItems(tab) {
+    const pack=creativePackV5(); if(!pack) return [];
+    const catalog=pack.getCatalog();
+    if(tab==='designs') return v5DesignCatalog();
+    if(tab==='characters') return catalog.characters.map((item,index)=>Object.assign({},item,{kind:'character',index}));
+    if(tab==='doodles') return catalog.doodles.map((item,index)=>Object.assign({},item,{kind:'doodle',index}));
+    if(tab==='type') return catalog.textStructures.map((item,index)=>Object.assign({},item,{kind:'text',index}));
+    return catalog.specialLayouts.map((item,index)=>Object.assign({},item,{kind:'layout',index}));
+  }
+
+  function renderV5Filters(sheet,items) {
+    const filters=sheet.querySelector('.bw-v5-filters');
+    const categories=Array.from(new Set(items.map(item=>item.category).filter(Boolean))).slice(0,14);
+    const values=['all','favorites','recent'].concat(categories);
+    if(!values.includes(creativeV5Filter)) creativeV5Filter='all';
+    filters.innerHTML=values.map(value=>'<button class="bw-v5-filter '+(value===creativeV5Filter?'on':'')+'" data-v5-filter="'+escEnh(value)+'">'+escEnh(value)+'</button>').join('');
+    filters.querySelectorAll('[data-v5-filter]').forEach(button=>button.onclick=()=>{creativeV5Filter=button.dataset.v5Filter;creativeV5Limit=24;renderV5Catalog(sheet);});
+  }
+
+  function renderV5Catalog(sheet) {
+    const pack=creativePackV5(); if(!pack) return;
+    const items=v5TabItems(creativeV5Tab),query=(sheet.querySelector('#bw_v5_search').value||'').trim().toLowerCase();
+    renderV5Filters(sheet,items);
+    const favorites=v5FavoriteIds(),recent=v5RecentIds();
+    let matches=items.filter(item=>{
+      const identifier=creativeV5Tab==='designs'?item.id:(item.kind+'-'+item.id);
+      if(creativeV5Filter==='favorites'&&!favorites.includes(identifier)) return false;
+      if(creativeV5Filter==='recent'&&!recent.includes(identifier)) return false;
+      if(!/^(all|favorites|recent)$/.test(creativeV5Filter)&&item.category!==creativeV5Filter) return false;
+      const hay=[item.name,item.note,item.category].concat(item.tags||[]).join(' ').toLowerCase();
+      return !query||hay.includes(query);
+    });
+    if(creativeV5Filter==='recent') matches.sort((a,b)=>recent.indexOf(creativeV5Tab==='designs'?a.id:(a.kind+'-'+a.id))-recent.indexOf(creativeV5Tab==='designs'?b.id:(b.kind+'-'+b.id)));
+    sheet.querySelector('#bw_v5_count').textContent=matches.length+' found';
+    const format=['preview',1080,1080],visible=matches.slice(0,creativeV5Limit);
+    const cards=visible.map(item=>{
+      const identifier=creativeV5Tab==='designs'?item.id:(item.kind+'-'+item.id);
+      let layers=[];
+      if(creativeV5Tab==='designs') layers=buildV5Design(item,format); else layers=pack.instantiate(item.kind,item.id,format,{theme:activeCreativeTheme()});
+      return '<article class="bw-v5-card"><button class="bw-v5-fave '+(favorites.includes(identifier)?'on':'')+'" data-v5-fave="'+escEnh(identifier)+'" aria-label="favorite">★</button><button class="bw-v5-use" data-v5-use="'+escEnh(item.id)+'"><div class="bw-v5-preview">'+v5Preview(layers,format)+'</div><div class="bw-v5-meta"><b>'+escEnh(item.name)+'</b><span>'+escEnh(item.note||'Editable native CMVNG system.')+'</span><i>'+(creativeV5Tab==='designs'?'use complete design':'add editable layers')+' · '+layers.length+' layers →</i></div></button></article>';
+    }).join('');
+    sheet.querySelector('#bw_v5_grid').innerHTML=cards+(matches.length>visible.length?'<button class="bw-v5-more" data-v5-more>show '+Math.min(24,matches.length-visible.length)+' more →</button>':'')+(!matches.length?'<div class="bw-v5-empty">No systems match that search yet.</div>':'');
+    sheet.querySelectorAll('[data-v5-use]').forEach(button=>button.onclick=()=>{const item=items.find(entry=>entry.id===button.dataset.v5Use);if(!item)return;if(creativeV5Tab==='designs')useV5Design(item);else useV5Asset(item.kind,item);renderV5Catalog(sheet);});
+    sheet.querySelectorAll('[data-v5-fave]').forEach(button=>button.onclick=event=>{event.stopPropagation();toggleV5Favorite(button.dataset.v5Fave);renderV5Catalog(sheet);});
+    const more=sheet.querySelector('[data-v5-more]'); if(more) more.onclick=()=>{creativeV5Limit+=24;renderV5Catalog(sheet);};
+  }
+
+  function openCreativeKitV5() {
+    const pack=creativePackV5();
+    if(!pack || !pack.validation || !pack.validation.ok) { toast('the creative pack did not load · refresh the app','bad'); return; }
+    installCreativeV5Styles();
+    let sheet=document.getElementById('bw_creative_v5');
+    if(!sheet) {
+      sheet=document.createElement('div'); sheet.id='bw_creative_v5';
+      sheet.innerHTML='<div class="bw-v5-shell"><div class="bw-v5-head"><img src="'+BRAND_LOGO+'" alt="cmvng"><div><b>Signal Workshop</b><small>108 complete designs · 138 native systems · no palette-swap counting</small></div><button class="bw-v5-close" data-v5-close>×</button></div>'+
+        '<div class="bw-v5-proof"><span><b>108</b>designs</span><span><b>'+pack.counts.characters+'</b>characters</span><span><b>'+pack.counts.doodles+'</b>doodles</span><span><b>'+pack.counts.textStructures+'</b>type systems</span><span><b>'+pack.counts.specialLayouts+'</b>layouts</span></div>'+
+        '<div class="bw-v5-tabs">'+[['designs','108 designs'],['characters',pack.counts.characters+' characters'],['doodles',pack.counts.doodles+' doodles'],['type',pack.counts.textStructures+' type'],['layouts',pack.counts.specialLayouts+' layouts']].map(item=>'<button class="bw-v5-tab '+(item[0]==='designs'?'on':'')+'" data-v5-tab="'+item[0]+'">'+item[1]+'</button>').join('')+'</div>'+
+        '<div class="bw-v5-toolbar"><div class="bw-v5-search"><input id="bw_v5_search" placeholder="search evidence, launch, data, product, culture…"><span class="bw-v5-count" id="bw_v5_count">108 found</span></div><div class="bw-v5-options"><div class="bw-v5-themes">'+CREATIVE_V5_THEMES.map(item=>'<button class="bw-v5-theme '+(item.id==='signal'?'on':'')+'" data-v5-theme="'+item.id+'">'+item.name+'</button>').join('')+'</div><div class="bw-v5-modes"><button class="bw-v5-mode on" data-v5-mode="replace">replace</button><button class="bw-v5-mode" data-v5-mode="overlay">overlay</button></div></div><div class="bw-v5-help">Replace is the clean default. Overlay preserves the canvas and adds only the kit layers when there is room.</div><div class="bw-v5-filters"></div></div><div class="bw-v5-grid" id="bw_v5_grid"></div></div>';
+      sheet.onclick=event=>{if(event.target===sheet||event.target.closest('[data-v5-close]'))sheet.classList.remove('on');};
+      sheet.querySelector('#bw_v5_search').oninput=()=>{creativeV5Limit=24;renderV5Catalog(sheet);};
+      sheet.querySelectorAll('[data-v5-tab]').forEach(button=>button.onclick=()=>{creativeV5Tab=button.dataset.v5Tab;creativeV5Filter='all';creativeV5Limit=24;sheet.querySelectorAll('[data-v5-tab]').forEach(node=>node.classList.toggle('on',node===button));renderV5Catalog(sheet);});
+      sheet.querySelectorAll('[data-v5-theme]').forEach(button=>button.onclick=()=>{creativeV5Theme=button.dataset.v5Theme;sheet.querySelectorAll('[data-v5-theme]').forEach(node=>node.classList.toggle('on',node===button));renderV5Catalog(sheet);});
+      sheet.querySelectorAll('[data-v5-mode]').forEach(button=>button.onclick=()=>{creativeV5Mode=button.dataset.v5Mode;sheet.querySelectorAll('[data-v5-mode]').forEach(node=>node.classList.toggle('on',node===button));});
+      document.body.appendChild(sheet);
+    }
+    renderV5Catalog(sheet); sheet.classList.add('on');
+  }
+
   function addBuilderShape(kind) {
     const state = builderState();
     const color = '#2E6BFF';
@@ -2202,8 +2779,8 @@
     if (rail) {
       const kit = document.createElement('button');
       kit.className = 'add bw-rail-new bw-creative-rail';
-      kit.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.2L20 8l-4.2 3.8L17 18l-5-3-5 3 1.2-6.2L4 8l5.8-.8Z"/><path d="M19 16v6M16 19h6"/></svg></div><small>120+ kits</small>';
-      kit.onclick = openCreativeKit;
+      kit.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.2L20 8l-4.2 3.8L17 18l-5-3-5 3 1.2-6.2L4 8l5.8-.8Z"/><path d="M19 16v6M16 19h6"/></svg></div><small>Signal Workshop</small>';
+      kit.onclick = openCreativeKitV5;
       rail.insertBefore(kit, rail.firstChild);
       const shape = document.createElement('button');
       shape.className = 'add bw-rail-new';
@@ -2278,5 +2855,5 @@
 })();
 
 
-
 </script>
+
