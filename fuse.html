@@ -120,7 +120,7 @@
     $('bw_facts').innerHTML='<div class="bw-mut">gathering… opening the site, pulling numbers, reading X…</div>';
     try{
       const r=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:proj,root:root,session:BW_SESSION})});
-      const j=await r.json(); const b=j.brief||{}; window.__bwHasBrief=true;
+      const j=await r.json(); const b=j.brief||{}; window.__bwBrief=b; window.__bwHasBrief=true;
       const facts=Object.keys(b.live_numbers||{}).map(k=>'<div class="bw-f"><b>'+E(k)+'</b>'+E(b.live_numbers[k])+'</div>').join('')||'<div class="bw-mut">no live numbers found — type facts above.</div>';
       $('bw_facts').innerHTML='<div class="bw-ok" style="margin:2px 0 6px">✓ facts pulled · $0.00 · will be used in the write</div><div class="bw-facts">'+facts+'</div>';
     }catch(e){ $('bw_facts').innerHTML='<div class="bw-warn">could not gather. type facts above instead.</div>'; }
@@ -139,11 +139,12 @@
         var seg=u.pathname.split('/').filter(Boolean)[0]||'';
         var pj=$('bw_proj').value.trim()||seg||u.hostname.replace('www.','').split('.')[0];
         var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0],session:BW_SESSION})});
-        await rr.json(); window.__bwHasBrief=true;
+        var autoGather=await rr.json(); window.__bwBrief=autoGather.brief||{}; window.__bwHasBrief=true;
       }catch(e){}
     }
     $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">'+(shots.length?'reading your screenshot(s), then rewriting through the loop…':'writing '+n+' version(s) through the loop, then designing…')+'</div></div>';
     try{
+      window.__bwShots=shots.slice();
       const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief,images:shots,session:BW_SESSION})});
       const res=await r.json(); renderVersions(res);
     }catch(e){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">write failed. try again.</div></div>'; }
@@ -270,4 +271,1059 @@
   });
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ if($('wscr')&&$('wscr').classList.contains('on'))mountIntoWriter(); },200); });
 })();
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  if (typeof T === 'undefined' || !window.__bapi) return;
+
+  const ENH_VERSION = '1.0.0';
+  const TEMPLATE_DRAFT_PREFIX = 'banger.template.';
+  const BUILDER_DRAFT_KEY = 'banger.builder.autosave.v2';
+  let templateSaveTimer = 0;
+  let builderSaveTimer = 0;
+  let selectedBuilderId = null;
+  let suppressTemplateSave = false;
+  let suppressBuilderSave = false;
+
+  const escEnh = value => String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function toast(message, tone) {
+    let node = document.getElementById('bw_toast');
+    if (!node) {
+      node = document.createElement('div');
+      node.id = 'bw_toast';
+      node.setAttribute('role', 'status');
+      node.setAttribute('aria-live', 'polite');
+      document.body.appendChild(node);
+    }
+    node.className = 'on ' + (tone || '');
+    node.textContent = message;
+    clearTimeout(node.__timer);
+    node.__timer = setTimeout(() => node.className = '', 2600);
+  }
+
+  function injectEnhancementStyles() {
+    if (document.getElementById('bw_enhancement_style')) return;
+    const style = document.createElement('style');
+    style.id = 'bw_enhancement_style';
+    style.textContent = `
+      #bw_toast{position:fixed;left:50%;bottom:22px;transform:translate(-50%,18px);z-index:5000;
+        max-width:min(520px,calc(100vw - 28px));padding:11px 16px;border-radius:999px;background:#101C33;
+        color:#fff;font:700 12px 'Space Mono',monospace;letter-spacing:.02em;box-shadow:0 16px 38px -12px rgba(12,27,51,.55);
+        opacity:0;pointer-events:none;transition:.2s ease}
+      #bw_toast.on{opacity:1;transform:translate(-50%,0)}
+      #bw_toast.ok{background:#17623B}#bw_toast.warn{background:#8A5B11}#bw_toast.bad{background:#A22F49}
+      .bw-panel-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:-2px 0 14px}
+      .bw-panel-actions button{border:1px solid #cddaf0;background:#F4F8FF;color:#20386A;border-radius:11px;
+        padding:10px 8px;font:800 11px 'Space Mono',monospace;cursor:pointer}
+      .bw-panel-actions button:first-child{background:#E3ECFF;border-color:#9DBDF9;color:#123A9E}
+      .bw-autosave-note{grid-column:1/-1;color:#6C82AB;font:600 10px 'Space Mono',monospace;text-align:center}
+      #panel textarea.bw-field{width:100%;box-sizing:border-box;border:2px solid var(--b100);border-radius:11px;
+        padding:11px 12px;background:#FAFCFF;color:#0C1B33;font:600 14px 'Sora',sans-serif;line-height:1.45;
+        min-height:84px;resize:vertical;outline:none}
+      #panel textarea.bw-field:focus,#panel .bw-list-input:focus{border-color:#2E6BFF;box-shadow:0 0 0 3px rgba(46,107,255,.12)}
+      .bw-field-meta{display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#7E93C4;
+        font:600 9.5px 'Space Mono',monospace}
+      .bw-list-help{margin:-2px 0 8px;color:#6C82AB;font:600 10px 'Space Mono',monospace;line-height:1.4}
+      .bw-list-head{display:grid;gap:6px;margin-bottom:5px;padding-right:32px}
+      .bw-list-head span{font:700 9px 'Space Mono',monospace;color:#6C82AB;text-transform:uppercase;letter-spacing:.06em}
+      .bw-list-row{display:grid;gap:6px;align-items:center;margin-bottom:7px}
+      .bw-list-input{min-width:0;width:100%;box-sizing:border-box;border:2px solid var(--b100);border-radius:9px;
+        padding:9px 9px;background:#FAFCFF;color:#0C1B33;font:600 12.5px 'Sora',sans-serif;outline:none}
+      .bw-list-remove{width:28px;height:34px;border:0;border-radius:9px;background:#FDECEF;color:#B23A54;
+        font:800 17px 'Sora';cursor:pointer}
+      .bw-list-add{width:100%;border:1px dashed #9DBDF9;border-radius:10px;padding:9px;background:#F4F8FF;
+        color:#123A9E;font:800 11px 'Space Mono',monospace;cursor:pointer}
+      .bw-img-actions{position:absolute;left:3px;right:3px;bottom:3px;display:flex;justify-content:center;gap:3px;z-index:4}
+      .bw-img-actions button{width:24px;height:22px;border:0;border-radius:7px;background:rgba(12,27,51,.88);
+        color:#fff;font:800 11px 'Sora';padding:0;cursor:pointer}
+      .bw-drop-note{width:100%;margin-top:7px;color:#7E93C4;font:600 9.5px 'Space Mono',monospace}
+      .bw-design-fit{margin-top:12px;padding:11px;border:1px solid #d6e2f5;border-radius:12px;background:#F8FAFF}
+      .bw-design-fit-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;
+        color:#42588A;font:700 10px 'Space Mono',monospace;text-transform:uppercase;letter-spacing:.08em}
+      .bw-design-fit-head b{color:#123A9E;font-size:11px}
+      .bw-design-choices{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+      .bw-design-choice{flex:none;border:1px solid #cddaf0;border-radius:999px;background:#fff;color:#42588A;
+        padding:7px 10px;font:700 10px 'Space Mono',monospace;cursor:pointer;white-space:nowrap}
+      .bw-design-choice.on{background:#E3ECFF;border-color:#2E6BFF;color:#123A9E}
+      .bw-build-actions{display:grid;grid-template-columns:1.35fr 1fr;gap:8px;margin-top:9px}
+      .bw-build-now,.bw-edit-first{border:0;border-radius:11px;padding:11px 10px;font:800 11px 'Space Mono',monospace;cursor:pointer}
+      .bw-build-now{background:linear-gradient(180deg,#2E6BFF,#123A9E);color:#fff}
+      .bw-edit-first{background:#EEF3FD;color:#20386A;border:1px solid #cddaf0}
+      #bscr .tool{max-width:calc(100vw - 20px);overflow-x:auto;scrollbar-width:none}
+      #bscr .tool::-webkit-scrollbar{display:none}
+      #bw_builder_sheet{display:none;position:fixed;inset:0;background:rgba(12,27,51,.45);z-index:1800}
+      #bw_builder_sheet.on{display:block}
+      #bw_builder_sheet .bw-sheet{position:absolute;left:0;right:0;bottom:0;max-height:72vh;overflow:auto;
+        background:#fff;border-radius:22px 22px 0 0;padding:14px 14px calc(16px + env(safe-area-inset-bottom));
+        box-shadow:0 -18px 46px rgba(12,27,51,.3)}
+      .bw-sheet-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+      .bw-sheet-head b{font:800 16px 'Sora';color:#101C33}.bw-sheet-head small{font:600 10px 'Space Mono';color:#6C82AB}
+      .bw-sheet-head button{margin-left:auto;width:38px;height:38px;border:0;border-radius:11px;background:#EEF3FD;color:#20386A;font-size:20px}
+      .bw-inspector-section{border:1px solid #dce6f5;border-radius:14px;padding:11px;margin-bottom:10px;background:#F8FAFF}
+      .bw-inspector-section>label{display:block;margin-bottom:8px;font:700 9.5px 'Space Mono';color:#6C82AB;
+        text-transform:uppercase;letter-spacing:.08em}
+      .bw-control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+      .bw-control-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .bw-ctrl{border:1px solid #cddaf0;background:#fff;color:#20386A;border-radius:10px;padding:10px 8px;
+        font:800 10.5px 'Space Mono';cursor:pointer}
+      .bw-ctrl.primary{background:#E3ECFF;border-color:#9DBDF9;color:#123A9E}
+      .bw-ctrl.danger{background:#FDECEF;border-color:#F3B6C2;color:#B23A54}
+      .bw-range{display:grid;grid-template-columns:80px 1fr 44px;gap:8px;align-items:center;margin:8px 0}
+      .bw-range span{font:700 10px 'Space Mono';color:#42588A}.bw-range output{font:700 10px 'Space Mono';color:#123A9E;text-align:right}
+      .bw-layer{display:grid;grid-template-columns:28px minmax(0,1fr) 66px;gap:8px;align-items:center;
+        padding:8px 7px;border-bottom:1px solid #e8eef8;cursor:pointer}
+      .bw-layer:last-child{border-bottom:0}.bw-layer.on{background:#EAF1FF;border-radius:9px}
+      .bw-layer i{width:24px;height:24px;border-radius:7px;background:#E3ECFF;color:#123A9E;
+        display:flex;align-items:center;justify-content:center;font:800 9px 'Space Mono';font-style:normal}
+      .bw-layer span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:700 11px 'Sora';color:#20386A}
+      .bw-layer small{font:600 9px 'Space Mono';color:#7E93C4;text-align:right}
+      .bw-color-row{display:flex;align-items:center;gap:9px}.bw-color-row input[type=color]{width:52px;height:38px;
+        border:1px solid #cddaf0;border-radius:10px;padding:3px;background:#fff}
+      .bw-color-row input[type=text]{flex:1;min-width:0;border:1px solid #cddaf0;border-radius:10px;padding:10px;
+        font:700 11px 'Space Mono';color:#20386A}
+      #bscr .top .bw-top-tool{padding:9px 10px}
+      #bscr .rail .bw-rail-new .ic{background:linear-gradient(155deg,#E8E1FF,#CFC2FF);color:#4F2DB6}
+      button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid rgba(46,107,255,.3);outline-offset:2px}
+      @media(max-width:560px){
+        .bw-build-actions{grid-template-columns:1fr}
+        .bw-panel-actions{grid-template-columns:1fr}
+        #bscr .top{gap:5px}
+        #bscr .top .ghost,#bscr .top .exp{font-size:10px;padding:8px 9px}
+        #bscr .top .bw-hide-small{display:none}
+        .bw-control-grid.three{grid-template-columns:1fr}
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  /* ---------- Reliable template controls ---------- */
+  const nativeOpenT = openT;
+  const nativeDrawPanel = drawPanel;
+  const nativeDrawPreview = drawPreview;
+  const nativeDrawImgRow = drawImgRow;
+
+  function templateKey(id) {
+    return TEMPLATE_DRAFT_PREFIX + id;
+  }
+
+  function saveTemplateDraft() {
+    if (suppressTemplateSave || !cur || !vals) return;
+    clearTimeout(templateSaveTimer);
+    templateSaveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(templateKey(cur), JSON.stringify(vals));
+        const note = document.querySelector('.bw-autosave-note');
+        if (note) note.textContent = 'autosaved · ' + new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      } catch (_) {}
+    }, 500);
+  }
+
+  function resetTemplate() {
+    if (!cur || !T[cur]) return;
+    suppressTemplateSave = true;
+    vals = clone(T[cur].sample || {});
+    vals.branding = true;
+    vals.skin = vals.skin || 'detailed';
+    vals.format = vals.format || 'post';
+    vals.tone = vals.tone || 'classic';
+    if (vals.decor === undefined) vals.decor = true;
+    try { localStorage.removeItem(templateKey(cur)); } catch (_) {}
+    drawPanel();
+    drawPreview();
+    suppressTemplateSave = false;
+    toast('template reset to its original design', 'ok');
+  }
+
+  openT = function enhancedOpenTemplate(id) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(templateKey(id)) || 'null'); } catch (_) {}
+    suppressTemplateSave = true;
+    nativeOpenT(id);
+    if (saved && typeof saved === 'object') {
+      vals = Object.assign({}, vals, saved);
+      nativeDrawPanel();
+      nativeDrawPreview();
+      toast('restored your last edit for this template', 'ok');
+    }
+    suppressTemplateSave = false;
+    enhanceTemplatePanel();
+  };
+
+  drawPreview = function enhancedDrawPreview() {
+    nativeDrawPreview();
+    saveTemplateDraft();
+  };
+
+  drawPanel = function enhancedDrawPanel() {
+    nativeDrawPanel();
+    enhanceTemplatePanel();
+  };
+
+  function listSpec(label) {
+    const max = parseInt(((label || '').match(/×\s*(\d+)/) || [])[1] || (/\b(\d+)\s+(?:items|steps|rows|nodes|cells|branches|flags|beats|rules)/i.exec(label || '') || [])[1] || '6', 10);
+    const before = String(label || '').replace(/×\s*\d+.*/i, '').replace(/comma.*/i, '').trim();
+    const colonPart = before.match(/(?:rows?|items?|steps?|tiles?|milestones?|rungs?|nodes?|bubbles?|dots?|months?|weeks?|fields?|findings?|posts?|holdings?|offers?|parts?|skills?)\s+(.+)$/i);
+    const heads = colonPart && colonPart[1].includes(':') ? colonPart[1].split(':').map(x => x.trim()) : [];
+    return {max: Math.max(1, Math.min(max, 12)), heads};
+  }
+
+  function cleanCell(value) {
+    return String(value || '')
+      .replace(/:/g, '：')
+      .replace(/,/g, (m, index, all) => /\d/.test(all[index - 1] || '') && /\d/.test(all[index + 1] || '') ? ',' : '，')
+      .trim();
+  }
+
+  function splitColumns(row, count, heads) {
+    if (count <= 1) return [row];
+    const parts = String(row || '').split(':');
+    if (parts.length <= count) return parts.concat(Array(count - parts.length).fill(''));
+    if (count === 2 && /time/i.test(heads[0] || '')) {
+      return [parts.slice(0, -1).join(':'), parts[parts.length - 1]];
+    }
+    return parts.slice(0, count - 1).concat(parts.slice(count - 1).join(':'));
+  }
+
+  function enhanceSimpleField(field, slot) {
+    const input = field.querySelector('input[type="text"]');
+    if (!input || field.querySelector('.bw-field-meta')) return;
+    const current = String(vals[slot.id] || '');
+    const long = current.length > 58 || /body|copy|caption|description|note|subline|headline|quote|thread|hook|explain|take/i.test(slot.label || '');
+    let control = input;
+    if (long) {
+      const textarea = document.createElement('textarea');
+      textarea.className = 'bw-field';
+      textarea.value = current;
+      textarea.setAttribute('aria-label', slot.label || slot.id);
+      input.replaceWith(textarea);
+      control = textarea;
+    }
+    const meta = document.createElement('div');
+    meta.className = 'bw-field-meta';
+    meta.innerHTML = '<span>live preview</span><span class="bw-count">' + current.length + ' chars</span>';
+    field.appendChild(meta);
+    control.oninput = event => {
+      setV(slot.id, event.target.value);
+      const counter = meta.querySelector('.bw-count');
+      if (counter) counter.textContent = event.target.value.length + ' chars';
+    };
+  }
+
+  function enhanceListField(field, slot) {
+    const spec = listSpec(slot.label || '');
+    const sourceRows = parseList(vals[slot.id], spec.max);
+    const rows = sourceRows.length ? sourceRows.slice() : [''];
+    const cols = Math.max(1, spec.heads.length);
+    const label = field.querySelector('label');
+    field.innerHTML = '';
+    if (label) field.appendChild(label);
+    const help = document.createElement('div');
+    help.className = 'bw-list-help';
+    help.textContent = cols > 1 ? 'each row is editable · the columns match the design' : 'one item per row · drag-free, comma-safe editing';
+    field.appendChild(help);
+    const body = document.createElement('div');
+    field.appendChild(body);
+
+    function pack() {
+      const value = rows.filter(row => row.some ? row.some(x => String(x).trim()) : String(row).trim())
+        .map(row => Array.isArray(row) ? row.map(cleanCell).join(':') : cleanCell(row))
+        .join(', ');
+      setV(slot.id, value);
+    }
+
+    let dataRows = rows.map(row => splitColumns(row, cols, spec.heads));
+    function renderRows() {
+      body.innerHTML = '';
+      if (cols > 1) {
+        const head = document.createElement('div');
+        head.className = 'bw-list-head';
+        head.style.gridTemplateColumns = 'repeat(' + cols + ',minmax(0,1fr))';
+        head.innerHTML = spec.heads.map(x => '<span>' + escEnh(x) + '</span>').join('');
+        body.appendChild(head);
+      }
+      dataRows.forEach((row, ri) => {
+        const line = document.createElement('div');
+        line.className = 'bw-list-row';
+        line.style.gridTemplateColumns = 'repeat(' + cols + ',minmax(0,1fr)) 28px';
+        for (let ci = 0; ci < cols; ci++) {
+          const input = document.createElement('input');
+          input.className = 'bw-list-input';
+          input.value = row[ci] || '';
+          input.placeholder = spec.heads[ci] || ('item ' + (ri + 1));
+          input.oninput = event => {
+            dataRows[ri][ci] = event.target.value;
+            rows.splice(0, rows.length, ...dataRows);
+            pack();
+          };
+          line.appendChild(input);
+        }
+        const remove = document.createElement('button');
+        remove.className = 'bw-list-remove';
+        remove.type = 'button';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remove row ' + (ri + 1));
+        remove.onclick = () => {
+          dataRows.splice(ri, 1);
+          if (!dataRows.length) dataRows.push(Array(cols).fill(''));
+          rows.splice(0, rows.length, ...dataRows);
+          pack();
+          renderRows();
+        };
+        line.appendChild(remove);
+        body.appendChild(line);
+      });
+      if (dataRows.length < spec.max) {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'bw-list-add';
+        add.textContent = '+ add row';
+        add.onclick = () => {
+          dataRows.push(Array(cols).fill(''));
+          rows.splice(0, rows.length, ...dataRows);
+          renderRows();
+          const fields = body.querySelectorAll('.bw-list-input');
+          if (fields.length) fields[fields.length - cols].focus();
+        };
+        body.appendChild(add);
+      }
+    }
+    renderRows();
+  }
+
+  function enhanceTemplatePanel() {
+    const panel = document.getElementById('panel');
+    if (!panel || !cur || !T[cur]) return;
+    if (!panel.querySelector('.bw-panel-actions')) {
+      const actions = document.createElement('div');
+      actions.className = 'bw-panel-actions';
+      actions.innerHTML = '<button type="button" data-a="reset">reset original</button>' +
+        '<button type="button" data-a="preset">save as preset</button>' +
+        '<div class="bw-autosave-note">autosave is on</div>';
+      const first = panel.querySelector('.f');
+      if (first) first.insertAdjacentElement('afterend', actions); else panel.prepend(actions);
+      actions.querySelector('[data-a="reset"]').onclick = resetTemplate;
+      actions.querySelector('[data-a="preset"]').onclick = () => {
+        savePreset();
+        toast('saved to your library', 'ok');
+      };
+    }
+    const fields = Array.from(panel.children).filter(node => node.classList && node.classList.contains('f'));
+    const slots = T[cur].slots || [];
+    slots.forEach((slot, index) => {
+      if (!slot || slot.t !== 'text') return;
+      const field = fields[index + 1];
+      if (!field) return;
+      const listy = /×\s*\d|comma/i.test(slot.label || '');
+      if (listy) enhanceListField(field, slot);
+      else enhanceSimpleField(field, slot);
+    });
+  }
+
+  function replaceTemplateImage(slotId, index) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = event => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const arr = vals[slotId] || [];
+        arr[index] = reader.result;
+        vals[slotId] = arr;
+        drawPanel();
+        drawPreview();
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  drawImgRow = function enhancedDrawImageRow(slot) {
+    nativeDrawImgRow(slot);
+    const box = document.getElementById('ir_' + slot.id);
+    if (!box) return;
+    const arr = vals[slot.id] || [];
+    Array.from(box.querySelectorAll('.islot.filled')).forEach((item, index) => {
+      item.style.position = 'relative';
+      const actions = document.createElement('div');
+      actions.className = 'bw-img-actions';
+      actions.innerHTML = '<button type="button" data-a="prev" aria-label="Move image left">←</button>' +
+        '<button type="button" data-a="replace" aria-label="Replace image">↻</button>' +
+        '<button type="button" data-a="next" aria-label="Move image right">→</button>';
+      actions.onclick = event => event.stopPropagation();
+      actions.querySelector('[data-a="prev"]').disabled = index === 0;
+      actions.querySelector('[data-a="next"]').disabled = index === arr.length - 1;
+      actions.querySelector('[data-a="prev"]').onclick = () => {
+        if (index < 1) return;
+        [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+        drawPanel(); drawPreview();
+      };
+      actions.querySelector('[data-a="next"]').onclick = () => {
+        if (index >= arr.length - 1) return;
+        [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
+        drawPanel(); drawPreview();
+      };
+      actions.querySelector('[data-a="replace"]').onclick = () => replaceTemplateImage(slot.id, index);
+      item.appendChild(actions);
+    });
+    if (!box.querySelector('.bw-drop-note')) {
+      const note = document.createElement('div');
+      note.className = 'bw-drop-note';
+      note.textContent = 'images can be replaced and reordered before export';
+      box.appendChild(note);
+    }
+  };
+
+  /* ---------- Research -> best-fit design intelligence ---------- */
+  const DESIGN_RULES = [
+    {re:/\b(top\s*\d+|rank|leaderboard|best\s+\d|podium)\b/i, ids:['orbit10','leadboard','top5','podium']},
+    {re:/\b(vs\.?|versus|compare|against|better than|difference)\b/i, ids:['versus','compare3','feecompare','thisorthat']},
+    {re:/\b(how to|steps?|guide|checklist|do this|tutorial|airdrop|farm)\b/i, ids:['steps','stack','preflight','dyor']},
+    {re:/\b(timeline|history|roadmap|unlock|vesting|deadline|countdown|launch date)\b/i, ids:['timeline','vesting','countdown','betimeline']},
+    {re:/[$#]?\d[\d,.]*\s*(?:%|x|m|b|k|million|billion)?|\b(volume|tvl|users|revenue|stat|data)\b/i, ids:['bignum','tiles','bars','recap','area']},
+    {re:/\b(news|breaking|announce|announcing|launch|live now|update|shipped|release)\b/i, ids:['news','announce','changelog','milestone']},
+    {re:/\b(price|market|trade|trading|whale|bull|bear|funding|flow|apy|yield)\b/i, ids:['pnl','whale','gasline','feargreed','flow2']},
+    {re:/\b(ecosystem|network|map|architecture|agents?|nodes?|projects?)\b/i, ids:['ecosystem','network','mindmap','stack']},
+    {re:/\b(quote|said|take|opinion|believe|think|truth)\b/i, ids:['quote','minimal','sticker','hotcold']},
+    {re:/\b(thread|deep dive|research|explainer|breakdown)\b/i, ids:['threadcover','threadmap','setcover','eli5']},
+    {re:/\b(myth|wrong|misconception|fact check)\b/i, ids:['mythfact','redflags','greenflag']},
+    {re:/\b(poll|vote|community|sentiment)\b/i, ids:['pollcard','votes','vibecheck','feargreed']}
+  ];
+
+  function draftContext(version) {
+    const project = (document.getElementById('bw_proj') || {}).value || '';
+    const source = version && (version.source || '') || '';
+    const brief = window.__bwBrief || {};
+    return [project, version && version.lens, version && version.draft, source,
+      JSON.stringify(brief.live_numbers || {}), JSON.stringify(brief.news_feed || [])].join(' ');
+  }
+
+  function hasImagesAvailable() {
+    const brief = window.__bwBrief || {};
+    return !!((window.__bwShots || []).length || (brief.assets_for_design || []).length);
+  }
+
+  function designChoices(version) {
+    const context = draftContext(version);
+    const low = context.toLowerCase();
+    const tokens = Array.from(new Set(low.match(/[a-z0-9$%]{4,}/g) || [])).slice(0, 90);
+    const scores = {};
+    Object.keys(T).forEach(id => {
+      const template = T[id];
+      const hay = (id + ' ' + template.name + ' ' + template.cat + ' ' + (template.tags || '')).toLowerCase();
+      let score = 0;
+      tokens.forEach(token => { if (hay.includes(token)) score += 0.7; });
+      if (id === (version && version.template)) score += 3;
+      if (hasImagesAvailable() && (template.slots || []).some(slot => slot.t === 'images')) score += 2.5;
+      if (template.cat === 'my world' && !/limitless|wallchain|elsa|naira|lagos|nigeria|quacks|cmvng/.test(low)) score -= 12;
+      scores[id] = score;
+    });
+    DESIGN_RULES.forEach(rule => {
+      if (!rule.re.test(context)) return;
+      rule.ids.forEach((id, index) => { if (T[id]) scores[id] = (scores[id] || 0) + 12 - index * 1.4; });
+    });
+    if (!Object.keys(scores).some(id => scores[id] > 4)) {
+      ['quote','minimal','threadcover'].forEach((id, index) => { if (T[id]) scores[id] = 8 - index; });
+    }
+    return Object.keys(scores).sort((a, b) => scores[b] - scores[a]).slice(0, 4);
+  }
+
+  function projectLogoKey() {
+    const input = ((document.getElementById('bw_proj') || {}).value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!input) return '';
+    const keys = Object.keys(LOGOS || {});
+    return keys.find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === input) ||
+      keys.find(key => input.includes(key.toLowerCase().replace(/[^a-z0-9]/g, '')) ||
+        key.toLowerCase().replace(/[^a-z0-9]/g, '').includes(input)) || '';
+  }
+
+  function contextParts(version) {
+    const brief = window.__bwBrief || {};
+    const draft = String(version.draft || '');
+    const lines = draft.split(/\n+/).map(x => x.replace(/^[-•\d.)\s]+/, '').trim()).filter(Boolean);
+    const live = Object.keys(brief.live_numbers || {}).map(key => key + ': ' + brief.live_numbers[key]);
+    const news = (brief.news_feed || []).map(x => typeof x === 'string' ? x : (x.title || x.text || ''));
+    const facts = live.concat(news, lines.slice(1)).filter(Boolean);
+    const numbers = (draftContext(version).match(/[$#₦]?\d[\d,.]*\s*(?:[%xXMBK]|million|billion)?\+?/g) || [])
+      .map(x => x.trim()).filter(x => x.length > 1);
+    return {
+      headline: (lines[0] || ((document.getElementById('bw_proj') || {}).value + ' update') || 'the story').slice(0, 92),
+      secondary: (lines[1] || facts[0] || version.lens || 'the part worth watching').slice(0, 150),
+      lines,
+      facts: facts.length ? facts : lines,
+      numbers
+    };
+  }
+
+  function imageSources() {
+    const brief = window.__bwBrief || {};
+    const uploaded = (window.__bwShots || []).slice();
+    const gathered = (brief.assets_for_design || []).map(asset => asset && asset.file ? '/assets/' + encodeURIComponent(asset.file) : '').filter(Boolean);
+    return uploaded.concat(gathered).slice(0, 10);
+  }
+
+  function buildListValue(slot, parts) {
+    const spec = listSpec(slot.label || '');
+    const cols = Math.max(1, spec.heads.length);
+    const material = (parts.facts.length ? parts.facts : parts.lines).slice(0, spec.max);
+    while (material.length < Math.min(spec.max, 3)) material.push(parts.secondary);
+    return material.slice(0, spec.max).map((fact, index) => {
+      const phrase = String(fact || parts.secondary).replace(/[,]/g, '，').replace(/:/g, '：').slice(0, 72);
+      if (cols === 1) return phrase;
+      return spec.heads.map((head, ci) => {
+        const key = head.toLowerCase();
+        if (/rank|no\.?|#/.test(key)) return String(index + 1);
+        if (/done|pass|good|check/.test(key)) return '1';
+        if (/pct|percent/.test(key)) return (parts.numbers[index] || (72 - index * 9) + '%').replace(/:/g, '：');
+        if (/value|number|stat|price|pts|score|pool|rate|size|n$|Δ/i.test(head)) return (parts.numbers[index] || parts.numbers[0] || String((index + 1) * 10)).replace(/:/g, '：');
+        if (/sub|note|body|what|task|label/.test(key) && ci > 0) return (parts.facts[index + 1] || parts.secondary).replace(/[,]/g, '，').replace(/:/g, '：').slice(0, 62);
+        if (/time|date|day|month|q$/.test(key)) return index === 0 ? 'now' : 'next';
+        return phrase;
+      }).join(':');
+    }).join(', ');
+  }
+
+  function smartTemplateValues(templateId, version) {
+    const template = T[templateId];
+    const next = clone(template.sample || {});
+    const parts = contextParts(version);
+    const project = ((document.getElementById('bw_proj') || {}).value || '').trim();
+    const logoKey = projectLogoKey();
+    const images = imageSources();
+    let textCursor = 0;
+    (template.slots || []).forEach(slot => {
+      if (!slot) return;
+      const key = (slot.id + ' ' + (slot.label || '')).toLowerCase();
+      if (slot.t === 'logo') {
+        next[slot.id] = logoKey;
+      } else if (slot.t === 'images') {
+        next[slot.id] = images.slice(0, slot.max || 4);
+      } else if (slot.t === 'pfpform') {
+        next.pfp = next.pfp || 'cut';
+      } else if (slot.t === 'text') {
+        if (/×\s*\d|comma/i.test(slot.label || '')) {
+          next[slot.id] = buildListValue(slot, parts);
+        } else if (/accent/.test(key)) {
+          next[slot.id] = (project || parts.headline.split(/\s+/).slice(-2).join(' ')).slice(0, 28);
+        } else if (/big number|big stat|\bnumber\b|\bstat\b|\bpct\b|\bscore\b|\bprice\b|\bvalue\b|\bn\b/.test(key)) {
+          next[slot.id] = parts.numbers[textCursor++ % Math.max(parts.numbers.length, 1)] || '01';
+        } else if (/title|headline|\bhead\b|\bhook\b|\bmarket\b|\bquestion\b|\bq\b|line 1|main/.test(key)) {
+          next[slot.id] = parts.headline;
+        } else if (/brand name|project/.test(key) && project) {
+          next[slot.id] = project;
+        } else if (/who|author|handle|source/.test(key)) {
+          next[slot.id] = key.includes('source') ? (project || 'project research') : 'cmvng';
+        } else if (/sub|note|caption|body|what|foot|line 2|line 3|thesis/.test(key)) {
+          next[slot.id] = (parts.lines[textCursor++ % Math.max(parts.lines.length, 1)] || parts.secondary).slice(0, 150);
+        } else {
+          next[slot.id] = (parts.lines[textCursor++ % Math.max(parts.lines.length, 1)] || parts.secondary).slice(0, 110);
+        }
+      }
+    });
+    if (templateId === version.template && version.slots && typeof version.slots === 'object') {
+      Object.keys(version.slots).forEach(key => {
+        if ((template.slots || []).some(slot => slot.id === key)) next[key] = version.slots[key];
+      });
+    }
+    next.branding = true;
+    next.brandmode = next.brandmode || 'chip';
+    next.skin = next.skin || 'detailed';
+    next.format = next.format || 'post';
+    next.tone = next.tone || 'classic';
+    if (next.decor === undefined) next.decor = true;
+    return next;
+  }
+
+  function prepareDesign(versionId, templateId) {
+    const version = (window.__bwStore || {})[versionId];
+    if (!version || !T[templateId]) return false;
+    suppressTemplateSave = true;
+    openT(templateId);
+    vals = smartTemplateValues(templateId, version);
+    drawPanel();
+    drawPreview();
+    suppressTemplateSave = false;
+    saveTemplateDraft();
+    return true;
+  }
+
+  window.__bwEditDesign = function (versionId, templateId) {
+    const version = (window.__bwStore || {})[versionId];
+    const choice = templateId || (version && version.__chosenTemplate) || designChoices(version || {})[0];
+    if (!prepareDesign(versionId, choice)) return;
+    window.scrollTo(0, 0);
+    toast('best-fit template filled · every field is editable', 'ok');
+  };
+
+  window.__bwBuildDesign = async function (versionId, templateId) {
+    const version = (window.__bwStore || {})[versionId];
+    const choice = templateId || (version && version.__chosenTemplate) || designChoices(version || {})[0];
+    if (!prepareDesign(versionId, choice)) return;
+    toast('building editable layers from ' + T[choice].name + '…');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await window.openInBuilder();
+  };
+
+  function enhanceDraftCards() {
+    const out = document.getElementById('bw_out');
+    if (!out) return;
+    out.querySelectorAll('.bw-copy[data-id]').forEach(copyButton => {
+      const id = copyButton.getAttribute('data-id');
+      const version = (window.__bwStore || {})[id];
+      const card = copyButton.closest('.bw-card');
+      if (!version || !card || card.dataset.designEnhanced) return;
+      card.dataset.designEnhanced = '1';
+      const choices = designChoices(version);
+      version.__chosenTemplate = choices[0];
+      const fit = document.createElement('div');
+      fit.className = 'bw-design-fit';
+      fit.innerHTML = '<div class="bw-design-fit-head"><span>design intelligence</span><b>best fit · ' +
+        escEnh((T[choices[0]] || {}).name || choices[0]) + '</b></div>' +
+        '<div class="bw-design-choices">' + choices.map((templateId, index) =>
+          '<button type="button" class="bw-design-choice ' + (index === 0 ? 'on' : '') +
+          '" data-template="' + escEnh(templateId) + '">' + escEnh(T[templateId].name) + '</button>').join('') + '</div>' +
+        '<div class="bw-build-actions"><button type="button" class="bw-build-now">build editable design →</button>' +
+        '<button type="button" class="bw-edit-first">edit template first</button></div>';
+      const tags = card.querySelector('.bw-tags');
+      if (tags) tags.insertAdjacentElement('beforebegin', fit); else card.appendChild(fit);
+      fit.querySelectorAll('.bw-design-choice').forEach(button => {
+        button.onclick = () => {
+          version.__chosenTemplate = button.dataset.template;
+          fit.querySelectorAll('.bw-design-choice').forEach(x => x.classList.toggle('on', x === button));
+          const best = fit.querySelector('.bw-design-fit-head b');
+          if (best) best.textContent = 'selected · ' + T[button.dataset.template].name;
+        };
+      });
+      fit.querySelector('.bw-build-now').onclick = () => window.__bwBuildDesign(id, version.__chosenTemplate);
+      fit.querySelector('.bw-edit-first').onclick = () => window.__bwEditDesign(id, version.__chosenTemplate);
+      const oldFill = card.querySelector('.bw-fill');
+      if (oldFill) oldFill.style.display = 'none';
+    });
+  }
+
+  window.__bwEnhanceDrafts = enhanceDraftCards;
+  const draftObserver = new MutationObserver(enhanceDraftCards);
+  function watchDrafts() {
+    const out = document.getElementById('bw_out');
+    if (out) {
+      draftObserver.observe(out, {childList:true, subtree:true});
+      enhanceDraftCards();
+      return true;
+    }
+    return false;
+  }
+  if (!watchDrafts()) {
+    const bodyObserver = new MutationObserver(() => {
+      if (watchDrafts()) bodyObserver.disconnect();
+    });
+    bodyObserver.observe(document.body, {childList:true, subtree:true});
+  }
+
+  /* ---------- Complete template handoff to Builder ---------- */
+  const nativeOpenInBuilder = window.openInBuilder;
+
+  function stripContentForBackground(root) {
+    root.querySelectorAll('img,svg,canvas,video,picture').forEach(node => node.remove());
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach(node => node.textContent = '');
+    root.querySelectorAll('.chip,.mk,.meta,.num,.bd').forEach(node => {
+      const cs = getComputedStyle(node);
+      if (cs.backgroundColor === 'rgba(0, 0, 0, 0)' && (!cs.backgroundImage || cs.backgroundImage === 'none')) node.remove();
+    });
+  }
+
+  async function captureDesignBackground() {
+    const stageNode = document.getElementById('stage');
+    const root = stageNode && stageNode.firstElementChild;
+    if (!root || !window.htmlToImage) return '';
+    const frame = frameHTML(vals);
+    const cloneRoot = root.cloneNode(true);
+    stripContentForBackground(cloneRoot);
+    cloneRoot.style.filter = '';
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-12000px;top:0;width:' + frame.W + 'px;height:' + frame.H +
+      'px;overflow:hidden;pointer-events:none;z-index:-1';
+    holder.appendChild(cloneRoot);
+    document.body.appendChild(holder);
+    try {
+      await document.fonts.ready;
+      return await htmlToImage.toPng(cloneRoot, {pixelRatio:1,width:frame.W,height:frame.H});
+    } finally {
+      holder.remove();
+    }
+  }
+
+  window.openInBuilder = async function completeOpenInBuilder() {
+    if (!cur) return 0;
+    const stageNode = document.getElementById('stage');
+    const frame = frameHTML(vals);
+    stageNode.parentElement.style.width = frame.W + 'px';
+    stageNode.parentElement.style.height = frame.H + 'px';
+    stageNode.innerHTML = frame.html;
+    stageNode.firstElementChild.style.filter = '';
+    fitPass(stageNode);
+    await document.fonts.ready;
+    await new Promise(resolve => setTimeout(resolve, 120));
+    let background = '';
+    try { background = await captureDesignBackground(); } catch (_) {}
+    const count = await nativeOpenInBuilder();
+    if (background) {
+      const data = window.__bapi.serialize();
+      const format = window.__bapi.fmt()[0];
+      suppressBuilderSave = true;
+      window.__bapi.importEls(data, format, 'url("' + background + '") center / 100% 100% no-repeat');
+      suppressBuilderSave = false;
+    }
+    installBuilderEnhancements();
+    scheduleBuilderSave();
+    toast('design ready · ' + count + ' editable layers · structure preserved', 'ok');
+    return count;
+  };
+
+  /* ---------- Builder inspector, layers, shapes, and autosave ---------- */
+  function builderState() {
+    const list = window.__bapi.list();
+    const data = window.__bapi.serialize();
+    data.forEach((item, index) => {
+      item.__id = list[index] && list[index].id;
+      if ((item.type === 'shot' || item.type === 'img') && !item.ar && list[index]) {
+        item.ar = list[index].h / Math.max(1, list[index].w);
+      }
+    });
+    return {list, data, format:window.__bapi.fmt()[0], background:document.getElementById('bd_canvas').style.background || ''};
+  }
+
+  function importBuilderState(data, format, background, selectedIndex) {
+    const clean = data.map(item => {
+      const next = Object.assign({}, item);
+      delete next.__id;
+      return next;
+    });
+    suppressBuilderSave = true;
+    window.__bapi.importEls(clean, format || window.__bapi.fmt()[0], background || '');
+    suppressBuilderSave = false;
+    const nextList = window.__bapi.list();
+    if (typeof selectedIndex === 'number' && nextList[selectedIndex]) {
+      selectedBuilderId = nextList[selectedIndex].id;
+      window.__bapi.select(selectedBuilderId);
+    } else {
+      selectedBuilderId = null;
+    }
+    scheduleBuilderSave();
+  }
+
+  function selectedIndex(state) {
+    return state.list.findIndex(item => item.id === selectedBuilderId);
+  }
+
+  function mutateSelected(mutator, keepIndex) {
+    const state = builderState();
+    const index = selectedIndex(state);
+    if (index < 0) {
+      toast('select a layer on the canvas first', 'warn');
+      return;
+    }
+    mutator(state.data, index, state);
+    const target = keepIndex == null ? Math.min(index, state.data.length - 1) : keepIndex;
+    importBuilderState(state.data, state.format, state.background, target);
+    renderBuilderSheet();
+  }
+
+  function describeLayer(item, index) {
+    if (item.type === 'text') return (item.text || 'text').replace(/\s+/g, ' ').slice(0, 34);
+    if (item.type === 'logo') return (item.key || 'coin') + ' logo';
+    if (item.type === 'char' || item.type === 'cast' || item.type === 'peep' || item.type === 'mascot') return 'character';
+    if (item.type === 'svgraw' || item.type === 'doodle') return 'shape / decoration';
+    if (item.type === 'img' || item.type === 'shot') return 'image';
+    return item.type + ' ' + (index + 1);
+  }
+
+  function selectedControlHTML(state, index) {
+    if (index < 0) return '<div class="bw-inspector-section"><label>selection</label><div style="font:600 12px Sora;color:#6C82AB;line-height:1.5">Tap any layer on the canvas, then reopen Layers to edit it.</div></div>';
+    const item = state.data[index];
+    let html = '<div class="bw-inspector-section"><label>selected · ' + escEnh(describeLayer(item, index)) + '</label>';
+    if (item.type === 'text') {
+      html += '<div class="bw-range"><span>type size</span><input id="bw_font_size" type="range" min="12" max="180" value="' +
+        Math.round(item.size || 60) + '"><output>' + Math.round(item.size || 60) + '</output></div>' +
+        '<div class="bw-range"><span>line height</span><input id="bw_line_height" type="range" min="80" max="180" value="' +
+        Math.round(parseFloat(item.lh || 1.2) * 100) + '"><output>' + Math.round(parseFloat(item.lh || 1.2) * 100) + '%</output></div>' +
+        '<div class="bw-color-row"><input id="bw_text_color" type="color" value="' + rgbToHex(item.color || '#0C1B33') +
+        '"><input id="bw_text_color_value" type="text" value="' + escEnh(item.color || '#0C1B33') + '"></div>' +
+        '<div class="bw-control-grid" style="margin-top:8px"><button class="bw-ctrl" data-a="bold">bold</button>' +
+        '<button class="bw-ctrl" data-a="italic">italic</button></div>';
+    } else if (item.type === 'img' || item.type === 'shot') {
+      html += '<div class="bw-control-grid three"><button class="bw-ctrl" data-ar="1">square</button>' +
+        '<button class="bw-ctrl" data-ar="1.25">portrait</button><button class="bw-ctrl" data-ar="0.5625">wide</button></div>' +
+        '<button class="bw-ctrl primary" data-a="replace-image" style="width:100%;margin-top:8px">replace image</button>';
+    }
+    html += '<div class="bw-control-grid" style="margin-top:8px"><button class="bw-ctrl" data-a="back">send backward</button>' +
+      '<button class="bw-ctrl" data-a="front">bring forward</button><button class="bw-ctrl" data-a="duplicate">duplicate</button>' +
+      '<button class="bw-ctrl danger" data-a="delete">delete</button></div></div>';
+    return html;
+  }
+
+  function rgbToHex(value) {
+    if (/^#[0-9a-f]{6}$/i.test(value)) return value;
+    const nums = String(value).match(/\d+/g);
+    if (!nums || nums.length < 3) return '#0C1B33';
+    return '#' + nums.slice(0, 3).map(n => Math.max(0, Math.min(255, +n)).toString(16).padStart(2, '0')).join('');
+  }
+
+  function renderBuilderSheet() {
+    const sheet = document.getElementById('bw_builder_sheet');
+    if (!sheet || !sheet.classList.contains('on')) return;
+    const state = builderState();
+    const index = selectedIndex(state);
+    const host = sheet.querySelector('.bw-sheet');
+    host.innerHTML = '<div class="bw-sheet-head"><div><b>builder controls</b><br><small>' + state.data.length +
+      ' editable layers · autosave on</small></div><button type="button" data-close>×</button></div>' +
+      selectedControlHTML(state, index) +
+      '<div class="bw-inspector-section"><label>canvas background</label><div class="bw-color-row">' +
+      '<input id="bw_canvas_color" type="color" value="#EDF3FC"><button class="bw-ctrl" data-a="apply-bg" style="flex:1">apply color</button>' +
+      '<button class="bw-ctrl" data-a="clear-bg" style="flex:1">transparent</button></div></div>' +
+      '<div class="bw-inspector-section"><label>add shape</label><div class="bw-control-grid three">' +
+      '<button class="bw-ctrl" data-shape="rect">rectangle</button><button class="bw-ctrl" data-shape="circle">circle</button>' +
+      '<button class="bw-ctrl" data-shape="line">line</button></div></div>' +
+      '<div class="bw-inspector-section"><label>layers · back to front</label><div id="bw_layer_list">' +
+      state.data.map((item, i) => '<div class="bw-layer ' + (i === index ? 'on' : '') + '" data-index="' + i +
+        '"><i>' + (i + 1) + '</i><span>' + escEnh(describeLayer(item, i)) + '</span><small>' + escEnh(item.type) + '</small></div>').join('') +
+      '</div></div>' +
+      '<div class="bw-control-grid"><button class="bw-ctrl primary" data-a="save-now">save draft now</button>' +
+      '<button class="bw-ctrl" data-a="restore">restore autosave</button></div>';
+    host.querySelector('[data-close]').onclick = () => sheet.classList.remove('on');
+    host.querySelectorAll('.bw-layer').forEach(row => row.onclick = () => {
+      const i = +row.dataset.index;
+      const list = window.__bapi.list();
+      if (!list[i]) return;
+      selectedBuilderId = list[i].id;
+      window.__bapi.select(selectedBuilderId);
+      renderBuilderSheet();
+    });
+    const bind = (selector, fn) => {
+      const node = host.querySelector(selector);
+      if (node) node.onclick = fn;
+    };
+    bind('[data-a="back"]', () => mutateSelected((data, i) => {
+      if (i > 0) [data[i - 1], data[i]] = [data[i], data[i - 1]];
+    }, Math.max(0, index - 1)));
+    bind('[data-a="front"]', () => mutateSelected((data, i) => {
+      if (i < data.length - 1) [data[i + 1], data[i]] = [data[i], data[i + 1]];
+    }, Math.min(state.data.length - 1, index + 1)));
+    bind('[data-a="duplicate"]', () => mutateSelected((data, i) => {
+      const copy = clone(data[i]); copy.x = (copy.x || 0) + 36; copy.y = (copy.y || 0) + 36;
+      data.splice(i + 1, 0, copy);
+    }, index + 1));
+    bind('[data-a="delete"]', () => mutateSelected((data, i) => data.splice(i, 1), Math.max(0, index - 1)));
+    bind('[data-a="bold"]', () => mutateSelected((data, i) => data[i].fw = String(data[i].fw) === '800' ? '400' : '800'));
+    bind('[data-a="italic"]', () => mutateSelected((data, i) => data[i].fst = data[i].fst === 'italic' ? '' : 'italic'));
+    bind('[data-a="replace-image"]', replaceSelectedBuilderImage);
+    host.querySelectorAll('[data-ar]').forEach(button => button.onclick = () => mutateSelected((data, i, st) => {
+      data[i].type = 'img';
+      data[i].ar = +button.dataset.ar;
+      if (!data[i].src) data[i].src = '';
+    }));
+    const fontSize = host.querySelector('#bw_font_size');
+    if (fontSize) {
+      fontSize.oninput = event => {
+        const output = event.target.nextElementSibling; if (output) output.value = event.target.value;
+      };
+      fontSize.onchange = event => mutateSelected((data, i) => data[i].size = +event.target.value);
+    }
+    const lineHeight = host.querySelector('#bw_line_height');
+    if (lineHeight) {
+      lineHeight.oninput = event => {
+        const output = event.target.nextElementSibling; if (output) output.value = event.target.value + '%';
+      };
+      lineHeight.onchange = event => mutateSelected((data, i) => data[i].lh = (+event.target.value / 100).toFixed(2));
+    }
+    const textColor = host.querySelector('#bw_text_color');
+    if (textColor) textColor.onchange = event => mutateSelected((data, i) => data[i].color = event.target.value);
+    bind('[data-a="apply-bg"]', () => {
+      const color = host.querySelector('#bw_canvas_color').value;
+      const current = builderState();
+      importBuilderState(current.data, current.format, color, index);
+      renderBuilderSheet();
+    });
+    bind('[data-a="clear-bg"]', () => {
+      const current = builderState();
+      importBuilderState(current.data, current.format, 'transparent', index);
+      renderBuilderSheet();
+    });
+    host.querySelectorAll('[data-shape]').forEach(button => button.onclick = () => addBuilderShape(button.dataset.shape));
+    bind('[data-a="save-now"]', () => { saveBuilderDraft(true); });
+    bind('[data-a="restore"]', restoreBuilderDraft);
+  }
+
+  function openBuilderSheet() {
+    let sheet = document.getElementById('bw_builder_sheet');
+    if (!sheet) {
+      sheet = document.createElement('div');
+      sheet.id = 'bw_builder_sheet';
+      sheet.innerHTML = '<div class="bw-sheet"></div>';
+      sheet.onclick = event => { if (event.target === sheet) sheet.classList.remove('on'); };
+      document.body.appendChild(sheet);
+    }
+    sheet.classList.add('on');
+    renderBuilderSheet();
+  }
+
+  function addBuilderShape(kind) {
+    const state = builderState();
+    const color = '#2E6BFF';
+    let inner = '<rect x="4" y="4" width="92" height="92" rx="14" fill="' + color + '"/>';
+    let ar = 1;
+    if (kind === 'circle') inner = '<circle cx="50" cy="50" r="45" fill="' + color + '"/>';
+    if (kind === 'line') {
+      inner = '<path d="M5 50 H95" stroke="' + color + '" stroke-width="8" stroke-linecap="round"/>';
+      ar = .18;
+    }
+    state.data.push({type:'svgraw',vb:'0 0 100 100',inner,x:120,y:160,w:260,ar});
+    importBuilderState(state.data, state.format, state.background, state.data.length - 1);
+    renderBuilderSheet();
+    toast(kind + ' added', 'ok');
+  }
+
+  function replaceSelectedBuilderImage() {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*';
+    input.onchange = event => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const image = new Image();
+        image.onload = () => mutateSelected((data, index) => {
+          data[index].type = 'img';
+          data[index].src = reader.result;
+          data[index].ar = image.naturalHeight / Math.max(1, image.naturalWidth);
+        });
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  function saveBuilderDraft(manual) {
+    if (suppressBuilderSave || !document.getElementById('bd_canvas')) return;
+    try {
+      const state = builderState();
+      const payload = JSON.stringify({v:2,format:state.format,background:state.background,data:state.data.map(item => {
+        const copy = Object.assign({}, item); delete copy.__id; return copy;
+      })});
+      if (payload.length > 3800000) {
+        if (manual) toast('this layout is too image-heavy for browser autosave · use the library save button', 'warn');
+        return;
+      }
+      localStorage.setItem(BUILDER_DRAFT_KEY, payload);
+      if (manual) toast('builder draft saved on this device', 'ok');
+    } catch (_) {
+      if (manual) toast('browser storage is full · export or save to library', 'warn');
+    }
+  }
+
+  function scheduleBuilderSave() {
+    if (suppressBuilderSave) return;
+    clearTimeout(builderSaveTimer);
+    builderSaveTimer = setTimeout(() => saveBuilderDraft(false), 700);
+  }
+
+  function restoreBuilderDraft() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(BUILDER_DRAFT_KEY) || 'null'); } catch (_) {}
+    if (!saved || !Array.isArray(saved.data)) {
+      toast('no builder autosave found yet', 'warn');
+      return;
+    }
+    importBuilderState(saved.data, saved.format || 'post', saved.background || '', null);
+    renderBuilderSheet();
+    toast('builder autosave restored', 'ok');
+  }
+
+  function installBuilderEnhancements() {
+    const screen = document.getElementById('bscr');
+    if (!screen || screen.dataset.enhanced === ENH_VERSION) return;
+    screen.dataset.enhanced = ENH_VERSION;
+    const top = screen.querySelector('.top');
+    const exportButton = document.getElementById('bd_expBtn');
+    if (top && exportButton) {
+      const layers = document.createElement('button');
+      layers.type = 'button';
+      layers.className = 'ghost bw-top-tool';
+      layers.textContent = 'layers';
+      layers.onclick = openBuilderSheet;
+      top.insertBefore(layers, exportButton);
+      const originalExport = window.__bapi.exportPNG;
+      exportButton.onclick = async () => {
+        if (!window.__bapi.count()) {
+          toast('add a layer before exporting', 'warn');
+          return;
+        }
+        const url = await originalExport();
+        toast(url ? 'PNG exported at full resolution' : 'export failed · try removing a very large image', url ? 'ok' : 'bad');
+      };
+    }
+    const rail = document.getElementById('bd_rail');
+    if (rail) {
+      const shape = document.createElement('button');
+      shape.className = 'add bw-rail-new';
+      shape.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="16" cy="8" r="3"/></svg></div><small>shapes</small>';
+      shape.onclick = openBuilderSheet;
+      rail.appendChild(shape);
+      const restore = document.createElement('button');
+      restore.className = 'add bw-rail-new';
+      restore.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6"/><path d="M4 4v6h6"/></svg></div><small>restore</small>';
+      restore.onclick = restoreBuilderDraft;
+      rail.appendChild(restore);
+    }
+    document.addEventListener('pointerdown', event => {
+      const element = event.target.closest && event.target.closest('#bd_canvas .el');
+      if (element) selectedBuilderId = +(element.id || '').replace('bdel', '');
+    }, true);
+    const canvas = document.getElementById('bd_canvas');
+    if (canvas) {
+      const observer = new MutationObserver(scheduleBuilderSave);
+      observer.observe(canvas, {childList:true,subtree:true,attributes:true,attributeFilter:['style']});
+    }
+    document.addEventListener('keydown', event => {
+      if (!document.getElementById('bscr').classList.contains('on')) return;
+      if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName)) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault(); saveBuilderDraft(true); return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+        event.preventDefault(); mutateSelected((data, i) => {
+          const copy = clone(data[i]); copy.x = (copy.x || 0) + 36; copy.y = (copy.y || 0) + 36;
+          data.splice(i + 1, 0, copy);
+        }, selectedIndex(builderState()) + 1);
+      }
+    });
+  }
+
+  const nativeGoBuilder = window.goBuilder;
+  window.goBuilder = function enhancedGoBuilder() {
+    nativeGoBuilder();
+    installBuilderEnhancements();
+  };
+
+  injectEnhancementStyles();
+  installBuilderEnhancements();
+})();
+
+
+
 </script>
