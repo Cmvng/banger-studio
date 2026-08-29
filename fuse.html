@@ -278,7 +278,7 @@
 
   if (typeof T === 'undefined' || !window.__bapi) return;
 
-  const ENH_VERSION = '3.0.0';
+  const ENH_VERSION = '4.0.0';
   const TEMPLATE_DRAFT_PREFIX = 'banger.template.';
   const BUILDER_DRAFT_KEY = 'banger.builder.autosave.v2';
   const BRAND_LOGO = '/assets/cmvng-logo.png';
@@ -534,6 +534,19 @@
       .bw-doodle-demo{height:58px;margin-bottom:7px;display:flex;align-items:center;justify-content:center}.bw-doodle-demo svg{height:54px;max-width:100%}
       .bw-layout-demo{height:64px;margin-bottom:8px;border-radius:9px;background:#EAF1FF;border:1px solid #CFDDF4;padding:7px;display:grid;gap:4px}
       .bw-layout-demo u{display:block;text-decoration:none;border-radius:4px;background:#123A9E}.bw-layout-demo u:nth-child(2){width:72%;background:#8FB2F6}.bw-layout-demo u:nth-child(3){width:45%;background:#C6D7F5}
+      .bw-kit-search{position:sticky;top:56px;z-index:3;display:flex;gap:7px;margin:0 0 9px;padding:8px 0;background:#F7FAFF}
+      .bw-kit-search input{min-width:0;flex:1;border:1px solid #CCD9EF;border-radius:11px;background:#fff;padding:10px 11px;color:#101C33;font:700 10px 'Sora';outline:none}
+      .bw-kit-search input:focus{border-color:#2E6BFF;box-shadow:0 0 0 3px rgba(46,107,255,.1)}.bw-kit-count{display:flex;align-items:center;justify-content:center;min-width:67px;
+        border-radius:11px;background:#101C33;color:#fff;font:800 8px 'Space Mono'}
+      .bw-kit-filters{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:3px;scrollbar-width:none}.bw-kit-filters::-webkit-scrollbar{display:none}
+      .bw-kit-filter{flex:0 0 auto;border:1px solid #D6E2F5;border-radius:999px;padding:7px 10px;background:#fff;color:#5D719A;font:750 8px 'Space Mono'}
+      .bw-kit-filter.on{background:#2E6BFF;border-color:#2E6BFF;color:#fff}.bw-mega-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+      .bw-mega-card{position:relative;min-height:144px;border:1px solid #D6E2F5;border-radius:16px;padding:9px;background:#fff;text-align:left;overflow:hidden;box-shadow:0 13px 28px -23px #123A9E}
+      .bw-mega-card:active{transform:scale(.985)}.bw-mega-preview{position:relative;height:82px;margin-bottom:8px;border-radius:10px;overflow:hidden;background:var(--bg);color:var(--ink)}
+      .bw-mega-preview:before{content:'';position:absolute;left:9px;top:10px;width:56%;height:7px;border-radius:5px;background:var(--accent);box-shadow:0 13px 0 var(--ink),0 26px 0 color-mix(in srgb,var(--ink) 55%,transparent)}
+      .bw-mega-preview:after{content:'';position:absolute;right:8px;bottom:8px;width:28px;height:28px;border-radius:var(--shape);background:var(--accent);border:3px solid var(--ink);transform:rotate(var(--tilt))}
+      .bw-mega-card b{display:block;color:#101C33;font:800 10px/1.25 'Sora'}.bw-mega-card span{display:block;margin-top:3px;color:#7185AA;font:650 7.5px/1.35 'Space Mono'}
+      .bw-mega-card i{position:absolute;right:8px;bottom:7px;color:#2E6BFF;font:900 9px 'Sora';font-style:normal}.bw-kit-empty{grid-column:1/-1;padding:26px 12px;text-align:center;color:#7185AA;font:700 10px 'Space Mono'}
       .bw-foundation-layer{pointer-events:none!important}.bw-foundation-locked{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;
         background:#E4F7EC;color:#17623B;font:800 7.5px 'Space Mono'}.bw-reset-original{width:100%;margin-top:8px;border:1px solid #B7CAEB;border-radius:11px;
         padding:10px;background:#fff;color:#123A9E;font:800 10px 'Sora'}
@@ -719,8 +732,12 @@
     const news = (brief.news_feed || []).filter(Boolean);
     const pulse = (brief.x_pulse || []).filter(Boolean);
     const pages = (brief.pages_read || []).filter(Boolean);
+    const verified = (brief.verified_facts || []).filter(item => item && item.value);
+    const excerpts = (brief.source_excerpt || []).filter(Boolean);
+    const sources = (brief.sources || []).filter(item => item && item.url);
     const one = String(brief.one_liner || '').trim();
-    return {numbers,news,pulse,pages,one,count:numbers.length + news.length + pulse.length + pages.length + (one ? 1 : 0)};
+    return {numbers,news,pulse,pages,verified,excerpts,sources,one,
+      count:numbers.length + news.length + pulse.length + pages.length + verified.length + excerpts.length + (one ? 1 : 0)};
   }
 
   function renderResearchBrief(project, brief) {
@@ -728,15 +745,18 @@
     if (!facts) return;
     const evidence = briefEvidence(brief);
     const numberHTML = evidence.numbers.slice(0, 5).map(key => '<div class="bw-f"><b>' + escEnh(key) + '</b>' + escEnh(brief.live_numbers[key]) + '</div>').join('');
+    const verifiedHTML = evidence.verified.slice(0, 4).map(item => '<div class="bw-f"><b>' + escEnh(item.label || 'verified') + '</b>' + escEnh(String(item.value).slice(0, 150)) + '</div>').join('');
     const sourcePills = [
       evidence.one ? '<div class="bw-f"><b>official description</b>found</div>' : '',
+      evidence.excerpts.length ? '<div class="bw-f"><b>source content</b>' + evidence.excerpts.length + ' excerpt' + (evidence.excerpts.length === 1 ? '' : 's') + ' read</div>' : '',
       evidence.pages.length ? '<div class="bw-f"><b>official pages</b>' + evidence.pages.length + ' read</div>' : '',
       evidence.pulse.length ? '<div class="bw-f"><b>X signals</b>' + evidence.pulse.length + ' found</div>' : '',
       evidence.news.length ? '<div class="bw-f"><b>updates</b>' + evidence.news.length + ' found</div>' : ''
     ].join('');
     if (evidence.count) {
       facts.innerHTML = '<div class="bw-research-ready"><b>' + escEnh(project) + ' research brief ready ✓</b><span>' + evidence.count +
-        ' verified signal' + (evidence.count === 1 ? '' : 's') + ' will guide the writing and design match.</span></div><div class="bw-facts">' + numberHTML + sourcePills + '</div>';
+        ' verified signal' + (evidence.count === 1 ? '' : 's') + ' will guide the writing and design match.</span></div><div class="bw-facts">' + numberHTML + verifiedHTML + sourcePills + '</div>' +
+        (evidence.sources.length ? '<div class="bw-mut" style="margin-top:7px"><b>sources:</b> ' + evidence.sources.slice(0,3).map(item => escEnh(item.kind || 'source')).join(' · ') + '</div>' : '');
       setWriterFlow(1);
     } else {
       facts.innerHTML = '<div class="bw-warn"><b>I found the project name, but not enough verifiable material yet.</b><br><br>' +
@@ -744,15 +764,49 @@
     }
   }
 
+  function firstPastedURL() {
+    const ids = ['bw_root','bw_proj','bw_topic'];
+    for (const id of ids) {
+      const node = document.getElementById(id);
+      const match = String(node && node.value || '').match(/(?:https?:\/\/[^\s<>"']+|(?:www\.)?[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/i);
+      if (match) {
+        const value=match[0].replace(/[),.;!?]+$/, '');
+        return /^https?:\/\//i.test(value) ? value : 'https://' + value;
+      }
+    }
+    return '';
+  }
+
+  function projectFromURL(raw) {
+    try {
+      const url = new URL(raw);
+      const host = url.hostname.toLowerCase().replace(/^www\./, '');
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (/^(x|twitter)\.com$/.test(host) && parts[0]) return '@' + parts[0];
+      return host.split('.')[0].replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    } catch (_) { return 'linked project'; }
+  }
+
   async function smartResearchProject(force) {
     const projectInput = document.getElementById('bw_proj');
     const rootInput = document.getElementById('bw_root');
     const facts = document.getElementById('bw_facts');
-    const project = String(projectInput && projectInput.value || '').trim();
+    const pastedURL = firstPastedURL();
+    let project = String(projectInput && projectInput.value || '').trim();
+    if (/^https?:\/\//i.test(project)) {
+      if (rootInput && !rootInput.value.trim()) rootInput.value = project;
+      project = projectFromURL(project);
+      if (projectInput) projectInput.value = project;
+    }
+    if (!project && pastedURL) {
+      project = projectFromURL(pastedURL);
+      if (projectInput) projectInput.value = project;
+    }
     if (!project) {
-      if (facts) facts.innerHTML = '<div class="bw-warn">Enter the actual project name first.</div>';
+      if (facts) facts.innerHTML = '<div class="bw-warn">Enter a project name or paste an exact website, article, docs, or X-post link.</div>';
       return false;
     }
+    if (rootInput && !rootInput.value.trim() && pastedURL) rootInput.value = pastedURL;
     const source = normaliseProjectSource(rootInput && rootInput.value);
     const helper = document.querySelector('.bw-source-help');
     if (helper) {
@@ -773,7 +827,7 @@
       window.__bwBrief = brief;
       window.__bwBriefKey = key;
       window.__bwBriefProject = project;
-      window.__bwHasBrief = briefEvidence(brief).count > 0;
+      window.__bwHasBrief = response.ok && briefEvidence(brief).count > 0;
       renderResearchBrief(project, brief);
       return window.__bwHasBrief;
     } catch (_) {
@@ -805,6 +859,16 @@
       helper.textContent = source.warning;
       helper.classList.toggle('on', !!source.warning);
     });
+    const topicField = document.getElementById('bw_topic');
+    if (topicField) topicField.addEventListener('paste', () => setTimeout(() => {
+      const link = firstPastedURL();
+      if (!link) return;
+      if (!root.value.trim()) root.value = link;
+      if (!project.value.trim()) project.value = projectFromURL(link);
+      helper.textContent = 'link detected · the exact page/post will be researched before writing';
+      helper.classList.add('on');
+      invalidate();
+    }, 0));
     gather.onclick = async () => {
       gather.disabled = true;
       const old = gather.textContent;
@@ -816,10 +880,16 @@
     const nativeWrite = write.onclick;
     write.onclick = async event => {
       if (write.dataset.busy === '1') return;
-      const projectName = project.value.trim();
+      let projectName = project.value.trim();
       const topic = document.getElementById('bw_topic');
       const originalTopic = topic ? topic.value.trim() : '';
       const hasScreens = !!((window.__bwShots || []).length);
+      const pastedURL = firstPastedURL();
+      if (!projectName && pastedURL) {
+        projectName = projectFromURL(pastedURL);
+        project.value = projectName;
+        if (!root.value.trim()) root.value = pastedURL;
+      }
       write.dataset.busy = '1';
       write.disabled = true;
       const old = write.textContent;
@@ -1789,6 +1859,83 @@
     renderBuilderSheet();
   }
 
+  const KIT_THEMES = [
+    {id:'electric',name:'electric blue',bg:'#EAF1FF',ink:'#101C33',accent:'#2E6BFF',soft:'#BFD1F5',font:'Sora'},
+    {id:'midnight',name:'midnight signal',bg:'#071124',ink:'#FFFFFF',accent:'#68F0B2',soft:'#17335B',font:'Sora'},
+    {id:'paper',name:'research paper',bg:'#F7F2E8',ink:'#221D18',accent:'#E5532D',soft:'#DCD2C1',font:'Instrument Serif'},
+    {id:'acid',name:'acid terminal',bg:'#D8FF47',ink:'#101C18',accent:'#101C18',soft:'#B6D836',font:'Archivo Black'},
+    {id:'sunset',name:'sunset memo',bg:'#FFF0E8',ink:'#3E1820',accent:'#FF6C43',soft:'#FFC7B5',font:'Sora'},
+    {id:'infra',name:'infra red',bg:'#170B0D',ink:'#FFF5F1',accent:'#FF4D45',soft:'#522124',font:'Archivo Black'},
+    {id:'lavender',name:'lavender editorial',bg:'#F1ECFF',ink:'#241642',accent:'#8C5CFF',soft:'#D6C9FA',font:'Instrument Serif'},
+    {id:'aqua',name:'aqua protocol',bg:'#E7FBF8',ink:'#092E34',accent:'#00A99A',soft:'#AEE4DE',font:'Sora'},
+    {id:'mono',name:'monochrome',bg:'#F4F4F2',ink:'#111111',accent:'#707070',soft:'#D2D2CF',font:'Archivo Black'},
+    {id:'gold',name:'conviction gold',bg:'#11100D',ink:'#FFF8E5',accent:'#FFC53D',soft:'#514526',font:'Sora'}
+  ];
+
+  const KIT_COMPOSITIONS = [
+    {id:'spotlight',name:'signal spotlight',category:'research',note:'one sharp thesis with supporting context',kicker:'RESEARCH NOTE',title:'THE SIGNAL\nEVERYONE MISSED.'},
+    {id:'receipts',name:'receipts stack',category:'research',note:'claim plus three verified proof cards',kicker:'SHOW THE RECEIPTS',title:'ONE CLAIM.\nTHREE FACTS.'},
+    {id:'thesis',name:'editorial thesis',category:'opinion',note:'high-conviction quote and human observation',kicker:'CMVNG THESIS',title:'the product is live.\nthe narrative is late.'},
+    {id:'breaking',name:'breaking wire',category:'updates',note:'urgent launch, funding or product update',kicker:'BREAKING · LIVE',title:'SOMETHING\nJUST CHANGED.'},
+    {id:'metric',name:'metric hero',category:'data',note:'one number dominates the composition',kicker:'THE NUMBER',title:'18.4M'},
+    {id:'duel',name:'data duel',category:'comparison',note:'before/after or project-versus-project',kicker:'REALITY CHECK',title:'NARRATIVE\nVS REALITY'},
+    {id:'product',name:'product teardown',category:'product',note:'feature map with current-status labels',kicker:'PRODUCT BREAKDOWN',title:'WHAT ACTUALLY\nWORKS TODAY'},
+    {id:'quote',name:'quote impact',category:'social',note:'reaction, quote or creator takeaway',kicker:'ONE LINE',title:'“say less.\nmean more.”'},
+    {id:'timeline',name:'timeline pulse',category:'roadmap',note:'three dated milestones with status clarity',kicker:'PROJECT TIMELINE',title:'FROM IDEA\nTO LIVE PRODUCT'},
+    {id:'launch',name:'launch sequence',category:'updates',note:'countdown, announcement or TGE moment',kicker:'LAUNCH SEQUENCE',title:'READY FOR\nLIFTOFF.'},
+    {id:'culture',name:'culture poster',category:'culture',note:'bold CT-native meme or observation',kicker:'TIMELINE ENERGY',title:'NO FLUFF.\nJUST SIGNAL.'},
+    {id:'map',name:'ecosystem map',category:'product',note:'central project with connected components',kicker:'ECOSYSTEM MAP',title:'HOW THE PIECES\nCONNECT'}
+  ];
+
+  const MEGA_KITS = KIT_COMPOSITIONS.flatMap((composition, ci) => KIT_THEMES.map((theme, ti) => ({
+    id:composition.id + '-' + theme.id,name:composition.name + ' · ' + theme.name,
+    category:composition.category,note:composition.note,composition,theme,index:ci * KIT_THEMES.length + ti + 1
+  })));
+
+  function kitPanel(x,y,w,h,fill,stroke,round) {
+    return {type:'svgraw',vb:'0 0 100 100',inner:'<rect x="2" y="2" width="96" height="96" rx="' + (round || 8) + '" fill="' + fill + '"' +
+      (stroke ? ' stroke="' + stroke + '" stroke-width="3"' : '') + '/>',x,y,w,ar:h / Math.max(1,w)};
+  }
+
+  function kitText(text,x,y,w,size,color,font,weight,lh) {
+    return {type:'text',text,x,y,w,size,color,ff:font || 'Sora',fw:String(weight || 800),lh:String(lh || 1),pre:1};
+  }
+
+  function buildMegaKit(kit) {
+    const fmt=window.__bapi.fmt(), W=fmt[1], H=fmt[2], t=kit.theme, c=kit.composition;
+    const pad=Math.round(W*.075), inner=W-pad*2, top=Math.round(H*.11);
+    const base=[kitPanel(0,0,W,H,t.bg,'',0),kitText(c.kicker,pad,top,inner,22,t.accent,'Space Mono',800,1)];
+    if(c.id==='spotlight') return base.concat([kitText(c.title,pad,top+65,inner,88,t.ink,t.font,800,.92),kitPanel(pad,Math.round(H*.59),inner,Math.round(H*.16),t.soft,t.ink,10),kitText('the observation goes here. keep it specific, sourced and worth repeating.',pad+34,Math.round(H*.625),inner-68,30,t.ink,'Sora',650,1.24),{type:'svgraw',vb:'0 0 100 100',inner:'<circle cx="50" cy="50" r="42" fill="none" stroke="'+t.accent+'" stroke-width="6"/><circle cx="50" cy="50" r="8" fill="'+t.accent+'"/>',x:Math.round(W*.7),y:Math.round(H*.38),w:190,ar:1}]);
+    if(c.id==='receipts') return base.concat([kitText(c.title,pad,top+58,inner,78,t.ink,t.font,800,.95),...['01 · VERIFIED FACT','02 · VERIFIED FACT','03 · VERIFIED FACT'].map((label,i)=>kitPanel(pad,Math.round(H*(.42+i*.13)),inner,Math.round(H*.1),i===1?t.accent:t.soft,t.ink,7)),...['01 · VERIFIED FACT','02 · VERIFIED FACT','03 · VERIFIED FACT'].map((label,i)=>kitText(label,pad+28,Math.round(H*(.455+i*.13)),inner-56,25,i===1?t.bg:t.ink,'Space Mono',800,1))]);
+    if(c.id==='thesis') return base.concat([{type:'svgraw',vb:'0 0 120 80',inner:'<path d="M8 67C8 35 21 14 48 8V25C35 29 29 39 29 49H48V72H8ZM66 67C66 35 79 14 106 8V25C93 29 87 39 87 49H106V72H66Z" fill="'+t.accent+'"/>',x:pad,y:top+65,w:190,ar:.667},kitText(c.title,pad,Math.round(H*.31),inner,72,t.ink,'Instrument Serif',500,1.02),kitText('— @cmvng · thinking in public',pad,Math.round(H*.73),inner,22,t.accent,'Space Mono',800,1)]);
+    if(c.id==='breaking') return base.concat([kitPanel(0,Math.round(H*.25),W,Math.round(H*.48),t.accent,'',0),kitText(c.title,pad,Math.round(H*.34),inner,105,t.bg,'Archivo Black',800,.88),kitText('CONFIRMED · PRODUCT STATUS · SOURCE',pad,Math.round(H*.66),inner,22,t.bg,'Space Mono',800,1)]);
+    if(c.id==='metric') return base.concat([kitText(c.title,pad,Math.round(H*.24),inner,190,t.accent,'Archivo Black',800,.82),kitText('verified users · volume · TVL · revenue',pad,Math.round(H*.52),inner,29,t.ink,'Space Mono',800,1.2),kitPanel(pad,Math.round(H*.64),inner,Math.round(H*.12),t.soft,t.ink,9),{type:'svgraw',vb:'0 0 180 80',inner:'<path d="M6 69L42 55L70 61L105 31L134 39L174 8" fill="none" stroke="'+t.accent+'" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>',x:pad+38,y:Math.round(H*.66),w:inner-76,ar:.444}]);
+    if(c.id==='duel') return base.concat([kitText(c.title,pad,top+58,inner,72,t.ink,t.font,800,.92),kitPanel(pad,Math.round(H*.42),Math.round(inner*.47),Math.round(H*.34),t.ink,'',8),kitPanel(Math.round(W*.53),Math.round(H*.42),Math.round(inner*.47),Math.round(H*.34),t.soft,t.ink,8),kitText('BEFORE\n01\n02\n03',pad+28,Math.round(H*.47),Math.round(inner*.36),31,t.bg,'Space Mono',800,1.45),kitText('AFTER\n01\n02\n03',Math.round(W*.56),Math.round(H*.47),Math.round(inner*.36),31,t.ink,'Space Mono',800,1.45)]);
+    if(c.id==='product') return base.concat([kitText(c.title,pad,top+58,inner,73,t.ink,t.font,800,.94),kitPanel(pad,Math.round(H*.39),inner,Math.round(H*.39),t.soft,t.ink,8),...['LIVE · core product','PLANNED · next release','VERIFY · source / status'].map((label,i)=>kitText(label,pad+38,Math.round(H*(.46+i*.095)),inner-76,28,i===0?t.accent:t.ink,'Space Mono',800,1))]);
+    if(c.id==='quote') return base.concat([kitPanel(pad,Math.round(H*.2),inner,Math.round(H*.57),t.ink,t.accent,11),kitText(c.title,pad+45,Math.round(H*.32),inner-90,76,t.bg,'Instrument Serif',500,1.02),kitText('@creator · reaction / context',pad+45,Math.round(H*.68),inner-90,22,t.accent,'Space Mono',800,1)]);
+    if(c.id==='timeline') return base.concat([kitText(c.title,pad,top+55,inner,69,t.ink,t.font,800,.94),{type:'svgraw',vb:'0 0 100 400',inner:'<path d="M50 15V385" stroke="'+t.accent+'" stroke-width="7"/><circle cx="50" cy="55" r="18" fill="'+t.bg+'" stroke="'+t.ink+'" stroke-width="7"/><circle cx="50" cy="200" r="18" fill="'+t.bg+'" stroke="'+t.ink+'" stroke-width="7"/><circle cx="50" cy="345" r="18" fill="'+t.bg+'" stroke="'+t.ink+'" stroke-width="7"/>',x:pad,y:Math.round(H*.39),w:90,ar:4},...['LIVE · milestone one','CONFIRMED · milestone two','ROADMAP · milestone three'].map((label,i)=>kitText(label,pad+120,Math.round(H*(.43+i*.14)),inner-120,27,t.ink,'Space Mono',800,1))]);
+    if(c.id==='launch') return base.concat([kitText(c.title,pad,top+58,Math.round(inner*.7),86,t.ink,t.font,800,.92),{type:'svgraw',vb:'0 0 100 100',inner:'<path d="M58 12C75 19 83 35 82 53L61 74L28 41L49 20Z" fill="'+t.accent+'" stroke="'+t.ink+'" stroke-width="4"/><circle cx="62" cy="34" r="8" fill="'+t.bg+'"/><path d="M24 69L12 86M36 76L27 92" stroke="'+t.accent+'" stroke-width="7" stroke-linecap="round"/>',x:Math.round(W*.66),y:Math.round(H*.2),w:280,ar:1},kitPanel(pad,Math.round(H*.64),inner,Math.round(H*.11),t.ink,'',6),kitText('DATE · TIME · VERIFIED DESTINATION',pad+30,Math.round(H*.675),inner-60,24,t.bg,'Space Mono',800,1)]);
+    if(c.id==='culture') return base.concat([kitPanel(pad,Math.round(H*.19),inner,Math.round(H*.58),t.accent,t.ink,0),kitText(c.title,pad+40,Math.round(H*.31),inner-80,100,t.ink,'Archivo Black',800,.87),{type:'svgraw',vb:'0 0 100 100',inner:'<path d="M50 4L61 18L78 12L80 31L96 40L85 55L92 72L73 77L66 94L50 84L34 94L27 77L8 72L15 55L4 40L20 31L22 12L39 18Z" fill="'+t.bg+'" stroke="'+t.ink+'" stroke-width="4"/>',x:Math.round(W*.69),y:Math.round(H*.62),w:160,ar:1}]);
+    return base.concat([kitText(c.title,pad,top+58,inner,69,t.ink,t.font,800,.94),{type:'svgraw',vb:'0 0 100 100',inner:'<circle cx="50" cy="50" r="25" fill="'+t.accent+'" stroke="'+t.ink+'" stroke-width="5"/><circle cx="14" cy="25" r="10" fill="'+t.soft+'" stroke="'+t.ink+'" stroke-width="4"/><circle cx="86" cy="25" r="10" fill="'+t.soft+'" stroke="'+t.ink+'" stroke-width="4"/><circle cx="14" cy="78" r="10" fill="'+t.soft+'" stroke="'+t.ink+'" stroke-width="4"/><circle cx="86" cy="78" r="10" fill="'+t.soft+'" stroke="'+t.ink+'" stroke-width="4"/><path d="M26 31L40 42M74 31L60 42M26 72L40 58M74 72L60 58" stroke="'+t.ink+'" stroke-width="4"/>',x:Math.round(W*.2),y:Math.round(H*.39),w:Math.round(W*.6),ar:1},kitText('PROJECT',Math.round(W*.38),Math.round(H*.54),Math.round(W*.24),27,t.bg,'Space Mono',800,1)]);
+  }
+
+  function renderMegaKitCatalog(sheet) {
+    const grid=sheet.querySelector('#bw_mega_grid'), search=sheet.querySelector('#bw_kit_search'), count=sheet.querySelector('#bw_kit_count');
+    if(!grid || !search || !count) return;
+    const active=(sheet.querySelector('.bw-kit-filter.on') || {}).dataset?.category || 'all';
+    const query=search.value.trim().toLowerCase();
+    const matches=MEGA_KITS.filter(kit => (active==='all' || kit.category===active) && (!query || (kit.name+' '+kit.note+' '+kit.category).toLowerCase().includes(query)));
+    count.textContent=matches.length+' kits';
+    grid.innerHTML=matches.length ? matches.map(kit => '<button class="bw-mega-card" data-mega="'+kit.id+'" style="--bg:'+kit.theme.bg+';--ink:'+kit.theme.ink+';--accent:'+kit.theme.accent+';--shape:'+(kit.index%2?'50%':'7px')+';--tilt:'+(kit.index%3===0?'-12deg':'8deg')+'"><div class="bw-mega-preview"></div><b>'+escEnh(kit.name)+'</b><span>'+escEnh(kit.note)+'</span><i>use kit '+String(kit.index).padStart(3,'0')+' →</i></button>').join('') : '<div class="bw-kit-empty">no kits match that search.</div>';
+    grid.querySelectorAll('[data-mega]').forEach(button => button.onclick=()=>{
+      const kit=MEGA_KITS.find(item=>item.id===button.dataset.mega);
+      if(!kit) return;
+      appendCreativeElements(buildMegaKit(kit));
+      sheet.classList.remove('on');
+      toast(kit.name+' loaded · every layer stays editable','ok');
+    });
+  }
+
   const CREATOR_CHARACTERS = {
     researcher:{label:'researcher',note:'magnifier + evidence',inner:'<path d="M18 120V98Q22 84 50 84Q78 84 82 98V120Z" fill="#123A9E"/><circle cx="50" cy="48" r="29" fill="#F1B98A"/><path d="M23 43Q25 13 50 13Q77 13 79 43Q62 31 23 43Z" fill="#0C1B33"/><circle cx="42" cy="48" r="3" fill="#0C1B33"/><circle cx="58" cy="48" r="3" fill="#0C1B33"/><path d="M42 61Q50 67 58 61" stroke="#0C1B33" stroke-width="3" fill="none" stroke-linecap="round"/><circle cx="72" cy="76" r="14" stroke="#2E6BFF" stroke-width="6" fill="#EAF1FF" fill-opacity=".65"/><path d="M82 86L94 99" stroke="#2E6BFF" stroke-width="7" stroke-linecap="round"/>',tags:'research magnifier facts'},
     writer:{label:'writer',note:'pen + notebook',inner:'<path d="M15 120L20 93Q28 82 50 82Q72 82 80 93L85 120Z" fill="#2E6BFF"/><circle cx="50" cy="47" r="29" fill="#8B5B3F"/><path d="M22 48Q18 16 50 13Q80 16 79 48L67 33Q48 42 22 48Z" fill="#101C33"/><circle cx="40" cy="49" r="3" fill="#101C33"/><circle cx="58" cy="49" r="3" fill="#101C33"/><path d="M42 62Q50 66 58 62" stroke="#101C33" stroke-width="3" fill="none"/><rect x="20" y="88" width="38" height="27" rx="4" fill="#fff" stroke="#101C33" stroke-width="3"/><path d="M55 105L84 79" stroke="#FFC53D" stroke-width="6" stroke-linecap="round"/><path d="M82 78L89 74L86 82Z" fill="#101C33"/>',tags:'writer pen notebook creator'},
@@ -1898,10 +2045,13 @@
         ['quote','quote composition','opinion with attribution'],['contrast','comparison type','narrative versus reality'],['evidence','evidence stack','hook plus earned >>> facts']
       ];
       const layouts = [['spotlight','project spotlight'],['split','before / after'],['data','data dashboard'],['breaking','breaking update'],['frame','browser frame'],['brutal','brutalist poster']];
-      sheet.innerHTML = '<div class="bw-kit"><div class="bw-kit-head"><img src="' + BRAND_LOGO + '" alt="cmvng"><div><b>creative kit</b><small>characters · doodles · type systems · special layouts</small></div><button type="button" data-close>×</button></div>' +
-        '<div class="bw-kit-tabs"><button class="bw-kit-tab on" data-tab="characters">characters</button><button class="bw-kit-tab" data-tab="type">text structures</button>' +
+      sheet.innerHTML = '<div class="bw-kit"><div class="bw-kit-head"><img src="' + BRAND_LOGO + '" alt="cmvng"><div><b>creative kit · 120 systems</b><small>complete design systems · characters · doodles · type · brand</small></div><button type="button" data-close>×</button></div>' +
+        '<div class="bw-kit-tabs"><button class="bw-kit-tab on" data-tab="systems">120 design kits</button><button class="bw-kit-tab" data-tab="characters">characters</button><button class="bw-kit-tab" data-tab="type">text structures</button>' +
         '<button class="bw-kit-tab" data-tab="doodles">doodles</button><button class="bw-kit-tab" data-tab="layouts">special designs</button><button class="bw-kit-tab" data-tab="brand">brand</button></div>' +
-        '<section class="bw-kit-section on" data-section="characters"><div class="bw-kit-note">New native CMVNG characters. Each one stays movable, resizable and reusable as a Builder layer.</div>' +
+        '<section class="bw-kit-section on" data-section="systems"><div class="bw-kit-note"><b>120 coordinated systems:</b> 12 composition families across 10 genuinely different art directions. Search by use case, then tap a kit to add its fully editable layers.</div>' +
+        '<div class="bw-kit-search"><input id="bw_kit_search" placeholder="search launch, data, quote, product…"><div class="bw-kit-count" id="bw_kit_count">120 kits</div></div>' +
+        '<div class="bw-kit-filters">' + ['all','research','opinion','updates','data','comparison','product','social','roadmap','culture'].map(cat=>'<button class="bw-kit-filter '+(cat==='all'?'on':'')+'" data-category="'+cat+'">'+cat+'</button>').join('') + '</div><div class="bw-mega-grid" id="bw_mega_grid"></div></section>' +
+        '<section class="bw-kit-section" data-section="characters"><div class="bw-kit-note">New native CMVNG characters. Each one stays movable, resizable and reusable as a Builder layer.</div>' +
         '<div class="bw-kit-grid">' + Object.keys(CREATOR_CHARACTERS).map(key => { const item=CREATOR_CHARACTERS[key]; return '<button class="bw-kit-card" data-character="'+key+'"><div class="bw-char-demo"><svg viewBox="0 0 100 120">'+item.inner+'</svg></div><b>'+item.label+'</b><span>'+item.note+'</span><i>add +</i></button>'; }).join('') +
         '<button class="bw-kit-card" data-native="character"><div class="bw-char-demo"><div style="font:900 30px Sora;color:#2E6BFF">＋</div></div><b>full character library</b><span>original people, mascots, casts and AI character generator</span><i>open →</i></button></div></section>' +
         '<section class="bw-kit-section" data-section="type"><div class="bw-kit-note">Add complete type hierarchies, not isolated text boxes. Every line remains editable.</div><div class="bw-kit-grid">' +
@@ -1919,6 +2069,13 @@
         sheet.querySelectorAll('.bw-kit-tab').forEach(x => x.classList.toggle('on', x === button));
         sheet.querySelectorAll('.bw-kit-section').forEach(x => x.classList.toggle('on', x.dataset.section === button.dataset.tab));
       });
+      const kitSearch=sheet.querySelector('#bw_kit_search');
+      if(kitSearch) kitSearch.oninput=()=>renderMegaKitCatalog(sheet);
+      sheet.querySelectorAll('.bw-kit-filter').forEach(button=>button.onclick=()=>{
+        sheet.querySelectorAll('.bw-kit-filter').forEach(x=>x.classList.toggle('on',x===button));
+        renderMegaKitCatalog(sheet);
+      });
+      renderMegaKitCatalog(sheet);
       sheet.querySelectorAll('[data-character]').forEach(button => button.onclick = () => {
         const item=CREATOR_CHARACTERS[button.dataset.character]; const fmt=window.__bapi.fmt();
         appendCreativeElements([{type:'svgraw',vb:'0 0 100 120',inner:item.inner,ar:1.2,x:Math.round(fmt[1]*.62),y:Math.round(fmt[2]*.42),w:Math.round(fmt[1]*.28)}]); sheet.classList.remove('on');
@@ -2045,7 +2202,7 @@
     if (rail) {
       const kit = document.createElement('button');
       kit.className = 'add bw-rail-new bw-creative-rail';
-      kit.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.2L20 8l-4.2 3.8L17 18l-5-3-5 3 1.2-6.2L4 8l5.8-.8Z"/><path d="M19 16v6M16 19h6"/></svg></div><small>creative kit</small>';
+      kit.innerHTML = '<div class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.2L20 8l-4.2 3.8L17 18l-5-3-5 3 1.2-6.2L4 8l5.8-.8Z"/><path d="M19 16v6M16 19h6"/></svg></div><small>120+ kits</small>';
       kit.onclick = openCreativeKit;
       rail.insertBefore(kit, rail.firstChild);
       const shape = document.createElement('button');

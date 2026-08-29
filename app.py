@@ -166,13 +166,97 @@ def _readable(t):
     return t
 
 
+def _html_text(fragment):
+    """Turn a small trusted HTML fragment into readable source text."""
+    fragment = re.sub(r'<(?:script|style|nav|footer)[^>]*>.*?</(?:script|style|nav|footer)>', ' ', fragment or '', flags=re.I | re.S)
+    return _readable(html.unescape(re.sub(r'<[^>]+>', ' ', fragment)))
+
+
+def _extract_link_source(source_url):
+    """Read the exact pasted page or X post instead of silently collapsing it to a domain/profile."""
+    out = {'url': source_url or '', 'kind': '', 'title': '', 'author': '', 'excerpts': [], 'images': [], 'x_handle': ''}
+    if not source_url or not _safe_public_url(source_url):
+        return out
+    try:
+        parsed = urlparse(source_url)
+        host = (parsed.hostname or '').lower().removeprefix('www.')
+    except Exception:
+        return out
+
+    if host in ('x.com', 'twitter.com', 'mobile.twitter.com'):
+        parts = [p for p in parsed.path.split('/') if p]
+        out['x_handle'] = re.sub(r'[^A-Za-z0-9_]', '', parts[0]) if parts else ''
+        status = re.search(r'/status/(\d+)', parsed.path)
+        if status:
+            out['kind'] = 'exact X post'
+            raw = fetch('https://cdn.syndication.twimg.com/tweet-result?id=%s&lang=en' % status.group(1), timeout=12)
+            if raw:
+                try:
+                    item = json.loads(raw)
+                    body = _readable(item.get('text') or '')
+                    user = item.get('user') or {}
+                    out['author'] = '@' + str(user.get('screen_name') or out['x_handle'])
+                    out['title'] = str(user.get('name') or out['author']) + ' on X'
+                    if body: out['excerpts'].append(body[:1800])
+                    for media in (item.get('mediaDetails') or [])[:4]:
+                        url = media.get('media_url_https') or media.get('media_url')
+                        if url: out['images'].append(url)
+                except Exception:
+                    pass
+            if not out['excerpts']:
+                raw = fetch('https://publish.twitter.com/oembed?omit_script=1&dnt=1&url=' + quote(source_url), timeout=12)
+                if raw:
+                    try:
+                        item = json.loads(raw)
+                        body = _html_text(item.get('html') or '')
+                        out['author'] = _readable(item.get('author_name') or '')
+                        out['title'] = (out['author'] + ' on X').strip()
+                        if body: out['excerpts'].append(body[:1800])
+                    except Exception:
+                        pass
+        else:
+            out['kind'] = 'X profile'
+        return out
+
+    out['kind'] = 'provided webpage'
+    raw = fetch(source_url, timeout=15)
+    if not raw:
+        return out
+    title = re.search(r'<title[^>]*>(.*?)</title>', raw, re.I | re.S)
+    og_title = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', raw, re.I)
+    desc = re.search(r'<meta[^>]+(?:name|property)=["\'](?:description|og:description)["\'][^>]+content=["\']([^"\']+)', raw, re.I)
+    out['title'] = _html_text((og_title or title).group(1)) if (og_title or title) else ''
+    if desc:
+        value = _html_text(desc.group(1))
+        if value: out['excerpts'].append(value[:1000])
+    for match in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.I):
+        try: value = _readable(json.loads('"' + match.group(1) + '"'))
+        except Exception: value = ''
+        if len(value) > 80: out['excerpts'].append(value[:2400])
+    article = re.search(r'<article[^>]*>(.*?)</article>', raw, re.I | re.S)
+    scope = article.group(1) if article else raw
+    for para in re.findall(r'<p[^>]*>(.*?)</p>', scope, re.I | re.S):
+        value = _html_text(para)
+        if len(value) > 55: out['excerpts'].append(value[:650])
+        if len(out['excerpts']) >= 8: break
+    unique = []
+    for value in out['excerpts']:
+        key = re.sub(r'\W+', '', value.lower())[:180]
+        if key and all(key != prior[0] for prior in unique): unique.append((key, value))
+    out['excerpts'] = [value for _, value in unique][:8]
+    og = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)', raw, re.I)
+    if og: out['images'].append(html.unescape(og.group(1)))
+    return out
+
+
 def gather(project, root_url, assets_dir):
     """Return a source-aware dossier for one project."""
     os.makedirs(assets_dir, exist_ok=True)
     project = _readable(str(project or ''))[:120]
     supplied_root = str(root_url or '').strip()
+    link_source = _extract_link_source(supplied_root)
     slug_guess = re.sub(r'[^a-z0-9]', '', project.lower())
-    x_handle = ''
+    x_handle = link_source.get('x_handle', '')
     root_url = supplied_root
     try:
         parsed = urlparse(supplied_root if '://' in supplied_root else 'https://' + supplied_root)
@@ -224,11 +308,21 @@ def gather(project, root_url, assets_dir):
             except Exception:
                 coin_profile = None
 
-    D = {'project': project, 'root': root_url, 'when': time.strftime('%Y-%m-%d %H:%M'),
+    D = {'project': project, 'root': root_url, 'source_url': supplied_root, 'source_kind': link_source.get('kind', ''),
+         'source_excerpt': link_source.get('excerpts', []), 'when': time.strftime('%Y-%m-%d %H:%M'),
          'facts': [('project name', project)] if project else [], 'news': [], 'walked': [], 'x_pulse': [],
          'images': [], 'kept': [], 'sources': [], 'research_status': 'partial'}
-    if root_url: D['sources'].append({'kind': 'official site', 'url': root_url, 'status': 'primary'})
-    if x_handle: D['sources'].append({'kind': 'official X', 'url': 'https://x.com/' + x_handle, 'status': 'primary'})
+    if supplied_root and link_source.get('kind'):
+        D['sources'].append({'kind': link_source['kind'], 'url': supplied_root, 'status': 'user supplied'})
+    if root_url and root_url != supplied_root:
+        D['sources'].append({'kind': 'official site', 'url': root_url, 'status': 'primary'})
+    elif root_url and not D['sources']:
+        D['sources'].append({'kind': 'provided webpage', 'url': root_url, 'status': 'user supplied'})
+    if x_handle and link_source.get('kind') != 'exact X post':
+        D['sources'].append({'kind': 'X profile', 'url': 'https://x.com/' + x_handle, 'status': 'user supplied'})
+    if link_source.get('title'): D['facts'].append(('source title', link_source['title'][:240]))
+    if link_source.get('author'): D['facts'].append(('source author', link_source['author'][:120]))
+    for image_url in link_source.get('images', []): D['images'].append(('source image', image_url))
     if coin_profile:
         D['sources'].append({'kind': 'CoinGecko', 'url': 'https://www.coingecko.com/en/coins/' + coin_slug, 'status': 'secondary'})
         desc = _readable(_clean(((coin_profile.get('description') or {}).get('en') or '')))
@@ -238,6 +332,8 @@ def gather(project, root_url, assets_dir):
     walked_n=[0]
     html = fetch(root_url) if root_url else None
     if html:
+        parsed_root = urlparse(root_url)
+        base_origin = '%s://%s' % (parsed_root.scheme, parsed_root.netloc)
         t = re.search(r'<title>(.*?)</title>', html)
         d = re.search(r'name="description" content="([^"]*)"', html)
         if t: D['facts'].append(('site title', _clean(t.group(1))))
@@ -255,7 +351,7 @@ def gather(project, root_url, assets_dir):
         for u in links:
             if walked_n[0] >= 6: break
             if any(k in u for k in ['blog', 'news', 'ecosystem', 'about', 'docs']):
-                h = fetch(root_url + u)
+                h = fetch(base_origin + u)
                 if h:
                     heads = [_clean(x) for x in re.findall(r'<h[12][^>]*>(.*?)</h[12]>', h)]
                     heads = [x for x in heads if len(x) > 4][:5]
@@ -341,6 +437,7 @@ def gather(project, root_url, assets_dir):
                 pass
 
     meaningful = [f for f in D['facts'] if f[0] not in ('project name', 'token price')]
+    if D.get('source_excerpt'): meaningful.append(('source excerpt', D['source_excerpt'][0]))
     if meaningful and D['sources']: D['research_status'] = 'ready'
     elif meaningful: D['research_status'] = 'limited'
     return D
@@ -352,6 +449,9 @@ def build_brief(D):
     return {
         'project': D['project'],
         'official_source': D.get('root', ''),
+        'source_url': D.get('source_url', ''),
+        'source_kind': D.get('source_kind', ''),
+        'source_excerpt': D.get('source_excerpt', [])[:8],
         'research_status': D.get('research_status', 'partial'),
         'sources': D.get('sources', [])[:8],
         'one_liner': facts.get('site description') or facts.get('project description', ''),
@@ -1031,7 +1131,7 @@ def write_styled(topic, ctype, n=3, brief=None, voice=None, images=None):
             "Keep the original's real numbers exactly; never alter or invent numbers.")
     user = "CONTENT TYPE: %s\nTOPIC:\n%s" % (TYPE_LABEL.get(ctype, ctype), topic or "(rewrite the attached content)")
     if brief:
-        user += "\n\nBRIEF (real facts to use, do not invent beyond this):\n" + json.dumps(brief, ensure_ascii=False)[:3500]
+        user += "\n\nBRIEF (real facts and exact pasted-source excerpts; do not invent beyond this):\n" + json.dumps(brief, ensure_ascii=False)[:9000]
     content = []
     for im in (images or [])[:3]:
         content.append({'type': 'image', 'source': {'type': 'base64',
@@ -1158,6 +1258,14 @@ def _rate_allowed(client):
         recent.append(now)
         RATE_BUCKETS[client] = recent
         return True
+
+
+def _log_event(event, **fields):
+    """Small structured diagnostics without logging full user prompts or API secrets."""
+    payload = {'event': event, 'at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+    payload.update(fields)
+    try: print(json.dumps(payload, ensure_ascii=True, default=str), flush=True)
+    except Exception: pass
 
 
 def voice():
@@ -1394,6 +1502,9 @@ class H(BaseHTTPRequestHandler):
             brief = build_brief(D)
             with open(_brief_path(data), 'w', encoding='utf-8') as fp:
                 json.dump(brief, fp)
+            _log_event('gather.completed', project=brief.get('project', '')[:80], status=brief.get('research_status'),
+                       source_kind=brief.get('source_kind'), sources=len(brief.get('sources') or []),
+                       verified_facts=len(brief.get('verified_facts') or []), excerpts=len(brief.get('source_excerpt') or []))
             return self._send(200, json.dumps({'brief': brief}), 'application/json')
         if self.path == '/write':
             try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
@@ -1421,6 +1532,9 @@ class H(BaseHTTPRequestHandler):
                                n=int(data.get('n', 3)),
                                brief=(brief if data.get('usebrief') else None), voice=voice(),
                                images=imgs)
+            _log_event('compose.completed', content_type=data.get('type', 'banger'), used_brief=bool(brief and data.get('usebrief')),
+                       brief_status=(brief or {}).get('research_status'), result=res.get('error', 'ok'),
+                       versions=len(res.get('versions') or []), screenshots=len(imgs))
             return self._send(200, json.dumps(res), 'application/json')
         if self.path == '/learn':
             res = learn_edit(data.get('original', ''), data.get('edited', ''))
@@ -1436,3 +1550,4 @@ class H(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8080'))
     ThreadingHTTPServer(('0.0.0.0', port), H).serve_forever()
+
