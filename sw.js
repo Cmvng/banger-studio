@@ -1,4 +1,4 @@
-const CACHE = 'banger-studio-v4';
+const CACHE = 'banger-studio-v5';
 const SHELL = ['/legacy', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', event => {
