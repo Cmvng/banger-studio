@@ -436,10 +436,12 @@ def gather(project, root_url, assets_dir):
             except Exception:
                 pass
 
-    meaningful = [f for f in D['facts'] if f[0] not in ('project name', 'token price')]
-    if D.get('source_excerpt'): meaningful.append(('source excerpt', D['source_excerpt'][0]))
-    if meaningful and D['sources']: D['research_status'] = 'ready'
-    elif meaningful: D['research_status'] = 'limited'
+    weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
+    meaningful = [f for f in D['facts'] if f[0] not in weak_labels]
+    evidence_count = len(meaningful) + len(D.get('source_excerpt') or []) + len(D.get('news') or []) + len(D.get('walked') or []) + len(D.get('x_pulse') or [])
+    D['writing_ready'] = evidence_count > 0
+    if evidence_count and D['sources']: D['research_status'] = 'ready'
+    elif evidence_count: D['research_status'] = 'limited'
     return D
 
 
@@ -453,6 +455,7 @@ def build_brief(D):
         'source_kind': D.get('source_kind', ''),
         'source_excerpt': D.get('source_excerpt', [])[:8],
         'research_status': D.get('research_status', 'partial'),
+        'writing_ready': bool(D.get('writing_ready')),
         'sources': D.get('sources', [])[:8],
         'one_liner': facts.get('site description') or facts.get('project description', ''),
         'verified_facts': [{'label': k, 'value': v, 'status': 'confirmed'} for k, v in D['facts']
@@ -1503,7 +1506,7 @@ class H(BaseHTTPRequestHandler):
             with open(_brief_path(data), 'w', encoding='utf-8') as fp:
                 json.dump(brief, fp)
             _log_event('gather.completed', project=brief.get('project', '')[:80], status=brief.get('research_status'),
-                       source_kind=brief.get('source_kind'), sources=len(brief.get('sources') or []),
+                       writing_ready=brief.get('writing_ready'), source_kind=brief.get('source_kind'), sources=len(brief.get('sources') or []),
                        verified_facts=len(brief.get('verified_facts') or []), excerpts=len(brief.get('source_excerpt') or []))
             return self._send(200, json.dumps({'brief': brief}), 'application/json')
         if self.path == '/write':

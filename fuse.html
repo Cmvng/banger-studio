@@ -753,7 +753,7 @@
       evidence.pulse.length ? '<div class="bw-f"><b>X signals</b>' + evidence.pulse.length + ' found</div>' : '',
       evidence.news.length ? '<div class="bw-f"><b>updates</b>' + evidence.news.length + ' found</div>' : ''
     ].join('');
-    if (evidence.count) {
+    if (evidence.count && brief.writing_ready !== false) {
       facts.innerHTML = '<div class="bw-research-ready"><b>' + escEnh(project) + ' research brief ready ✓</b><span>' + evidence.count +
         ' verified signal' + (evidence.count === 1 ? '' : 's') + ' will guide the writing and design match.</span></div><div class="bw-facts">' + numberHTML + verifiedHTML + sourcePills + '</div>' +
         (evidence.sources.length ? '<div class="bw-mut" style="margin-top:7px"><b>sources:</b> ' + evidence.sources.slice(0,3).map(item => escEnh(item.kind || 'source')).join(' · ') + '</div>' : '');
@@ -827,7 +827,7 @@
       window.__bwBrief = brief;
       window.__bwBriefKey = key;
       window.__bwBriefProject = project;
-      window.__bwHasBrief = response.ok && briefEvidence(brief).count > 0;
+      window.__bwHasBrief = response.ok && brief.writing_ready !== false && briefEvidence(brief).count > 0;
       renderResearchBrief(project, brief);
       return window.__bwHasBrief;
     } catch (_) {
