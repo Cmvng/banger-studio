@@ -1,4 +1,61 @@
-91Q88 91 99 111V140Z" fill="#123A9E"/>',pose:'<path d="M30 103Q14 104 13 124" fill="none" stroke="#B8734F" stroke-width="12" stroke-linecap="round"/>',prop:'<circle cx="92" cy="88" r="19" fill="#EDF3FF" fill-opacity=".72" stroke="#2E6BFF" stroke-width="7"/><path d="M105 103L117 117" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round"/>'}),
+(function () {
+  'use strict';
+
+  const VERSION = '5.0.0';
+  const DEFAULT_THEME = {
+    bg: '#EDF3FF', paper: '#FFFFFF', ink: '#101C33', blue: '#2E6BFF',
+    navy: '#123A9E', soft: '#BFD1F5', mint: '#68F0B2', gold: '#FFC53D',
+    coral: '#FF6C43', red: '#FF4D45', muted: '#61769D'
+  };
+
+  function fmt(input) {
+    const raw = Array.isArray(input) ? input : ['square', 1080, 1080];
+    return { id: raw[0] || 'square', w: Number(raw[1]) || 1080, h: Number(raw[2]) || 1080 };
+  }
+
+  function theme(input) { return Object.assign({}, DEFAULT_THEME, input || {}); }
+  function px(n) { return Math.round(n); }
+  function textLayer(text, x, y, w, size, color, font, weight, lineHeight, extra) {
+    return Object.assign({
+      type: 'text', text: text, x: px(x), y: px(y), w: px(w), size: px(size),
+      color: color, ff: font || 'Sora', fw: String(weight || 800),
+      lh: String(lineHeight || 1), pre: 1
+    }, extra || {});
+  }
+  function svgLayer(vb, inner, x, y, w, ar, extra) {
+    return Object.assign({
+      type: 'svgraw', vb: vb || '0 0 100 100', inner: inner,
+      x: px(x), y: px(y), w: px(w), ar: Number(ar) || 1
+    }, extra || {});
+  }
+  function panel(x, y, w, h, fill, radius, stroke, sw) {
+    return svgLayer('0 0 100 100', '<rect x="2" y="2" width="96" height="96" rx="' + (radius || 0) + '" fill="' + fill + '"' + (stroke ? ' stroke="' + stroke + '" stroke-width="' + (sw || 3) + '"' : '') + '/>', x, y, w, h / Math.max(1, w));
+  }
+  function line(x, y, w, h, color, sw, dash) {
+    return svgLayer('0 0 100 20', '<path d="M3 10H97" fill="none" stroke="' + color + '" stroke-width="' + (sw || 5) + '" stroke-linecap="round"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>', x, y, w, h / Math.max(1, w));
+  }
+  function safeClone(value) {
+    if (Array.isArray(value)) return value.map(safeClone);
+    if (value && typeof value === 'object') {
+      const copy = {};
+      Object.keys(value).forEach(function (key) { copy[key] = safeClone(value[key]); });
+      return copy;
+    }
+    return value;
+  }
+
+  function character(def) {
+    const body = def.body || '<path d="M20 140V110Q28 91 60 91Q92 91 100 110V140Z" fill="#2E6BFF"/>';
+    const face = def.face || '<circle cx="60" cy="56" r="31" fill="#B8734F"/><circle cx="49" cy="57" r="3" fill="#101C33"/><circle cx="70" cy="57" r="3" fill="#101C33"/><path d="M50 71Q60 78 70 71" fill="none" stroke="#101C33" stroke-width="3" stroke-linecap="round"/>';
+    return {
+      id: def.id, name: def.name, category: def.category, tags: def.tags,
+      note: def.note, vb: '0 0 120 140', ar: 140 / 120,
+      inner: '<g stroke-linejoin="round">' + (def.back || '') + body + face + (def.hair || '') + (def.pose || '') + (def.prop || '') + (def.front || '') + '</g>'
+    };
+  }
+
+  const characters = [
+    character({id:'source-detective',name:'Source Detective',category:'research',tags:['evidence','magnifier','investigation'],note:'Leans into a source with an oversized magnifier.',hair:'<path d="M30 52Q31 20 61 19Q89 20 91 51Q73 35 30 52Z" fill="#101C33"/>',body:'<path d="M16 140V111Q24 91 58 91Q88 91 99 111V140Z" fill="#123A9E"/>',pose:'<path d="M30 103Q14 104 13 124" fill="none" stroke="#B8734F" stroke-width="12" stroke-linecap="round"/>',prop:'<circle cx="92" cy="88" r="19" fill="#EDF3FF" fill-opacity=".72" stroke="#2E6BFF" stroke-width="7"/><path d="M105 103L117 117" stroke="#2E6BFF" stroke-width="8" stroke-linecap="round"/>'}),
     character({id:'field-writer',name:'Field Writer',category:'writing',tags:['notebook','pen','reporter'],note:'Captures a live observation in a pocket notebook.',face:'<circle cx="60" cy="55" r="30" fill="#8B5B3F"/><circle cx="49" cy="56" r="3" fill="#101C33"/><circle cx="70" cy="56" r="3" fill="#101C33"/><path d="M51 70Q60 74 69 70" fill="none" stroke="#101C33" stroke-width="3"/>',hair:'<path d="M30 50Q25 20 60 17Q91 20 90 51L76 35Q58 43 30 50Z" fill="#101C33"/>',body:'<path d="M16 140L22 105Q31 91 60 91Q89 91 98 105L104 140Z" fill="#2E6BFF"/>',prop:'<rect x="15" y="105" width="48" height="31" rx="5" fill="#FFFFFF" stroke="#101C33" stroke-width="3"/><path d="M58 126L100 91" stroke="#FFC53D" stroke-width="7" stroke-linecap="round"/><path d="M98 89L108 84L104 95Z" fill="#101C33"/>'}),
     character({id:'chart-analyst',name:'Chart Analyst',category:'data',tags:['chart','glasses','metrics'],note:'Presents a verified chart instead of a vague claim.',hair:'<path d="M31 48Q35 18 61 18Q88 18 91 50Q69 32 31 48Z" fill="#4B2D24"/>',body:'<path d="M17 140L21 108Q31 91 60 91Q88 91 101 108L104 140Z" fill="#101C33"/>',front:'<rect x="72" y="98" width="43" height="34" rx="5" fill="#FFFFFF" stroke="#123A9E" stroke-width="3"/><path d="M78 124L86 116L93 120L108 105" fill="none" stroke="#18B27B" stroke-width="5" stroke-linecap="round"/><rect x="37" y="51" width="19" height="13" rx="5" fill="none" stroke="#2E6BFF" stroke-width="4"/><rect x="65" y="51" width="19" height="13" rx="5" fill="none" stroke="#2E6BFF" stroke-width="4"/><path d="M56 57H65" stroke="#2E6BFF" stroke-width="4"/>'}),
     character({id:'product-builder',name:'Product Builder',category:'product',tags:['wrench','maker','shipping'],note:'Carries a wrench and a finished product block.',hair:'<path d="M31 48Q35 18 60 18Q85 18 90 48Z" fill="#2E6BFF"/><rect x="25" y="43" width="70" height="10" rx="5" fill="#123A9E"/>',body:'<path d="M16 140V108Q26 91 60 91Q94 91 104 108V140Z" fill="#FFC53D"/>',prop:'<path d="M83 96L110 123M102 91L114 103L92 125L80 113Z" fill="#EDF3FF" stroke="#101C33" stroke-width="5"/><rect x="16" y="108" width="27" height="27" rx="4" fill="#2E6BFF" stroke="#101C33" stroke-width="3"/>'}),
