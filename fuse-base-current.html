@@ -1,0 +1,273 @@
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  let BW_SESSION = '';
+  try {
+    BW_SESSION = sessionStorage.getItem('banger_session') || ('bw_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2));
+    sessionStorage.setItem('banger_session', BW_SESSION);
+  } catch(e) {
+    BW_SESSION = 'bw_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+  }
+  const NL = String.fromCharCode(10);
+  function E(x){return (window.esc?esc(x):String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));}
+  window.__bwHasBrief=false; window.__bwStore={}; let shots=[]; window.__bwShots=shots;
+  function addShots(files){
+    [].slice.call(files,0,3-shots.length).forEach(function(f){
+      var rd=new FileReader();
+      rd.onload=function(){ var im=new Image(); im.onload=function(){
+        var s=Math.min(1,1100/im.width);
+        var c=document.createElement('canvas'); c.width=Math.round(im.width*s); c.height=Math.round(im.height*s);
+        c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+        shots.push(c.toDataURL('image/jpeg',0.82)); drawThumbs();
+      }; im.src=rd.result; };
+      rd.readAsDataURL(f);
+    });
+  }
+  function drawThumbs(){ var t=$('bw_thumbs'); if(!t)return;
+    t.innerHTML=shots.map(function(s,i){return '<div class="bw-th"><img src="'+s+'"><button type="button" class="bw-thx" data-i="'+i+'">&times;</button></div>';}).join('');
+  }
+  const TYPE_OPTS=[['deepdive','deep-dive'],['alpha','alpha / call'],['update','update'],['airdrop','airdrop / how-to'],['educational','educational'],['banger','banger'],['viral','viral'],['article','article']];
+  const N_OPTS=[['2','2'],['1','1'],['3','3']];
+  function ddHTML(id,opts,val){
+    var cur=opts.find(function(o){return o[0]===val;})||opts[0];
+    var items=opts.map(function(o){return '<div class="bw-ddo'+(o[0]===val?' sel':'')+'" data-v="'+E(o[0])+'">'+E(o[1])+'</div>';}).join('');
+    return '<div class="bw-dd" id="'+id+'"><button type="button" class="bw-ddbtn" data-v="'+E(cur[0])+'">'+E(cur[1])+'<span class="bw-ddcar">&#9662;</span></button><div class="bw-ddlist">'+items+'</div></div>';
+  }
+
+  function styles(){
+    if($('bw_style'))return;
+    const s=document.createElement('style'); s.id='bw_style';
+    s.textContent=''
+    +'.bw-wrap{padding:4px 2px 48px}'
+    +'.bw-card{background:#fff;border:1px solid #dce6f5;border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 12px 30px -14px rgba(18,58,158,.20)}'
+    +'.bw-lab{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#5D7BB8;margin:2px 0 7px}'
+    +'.bw-in,.bw-sel{width:100%;background:#F4F8FF;border:1px solid #cddaf0;border-radius:10px;color:#0B1B3A;padding:12px;font-size:15px;margin-bottom:12px;box-sizing:border-box}'
+    +'textarea.bw-in{min-height:76px;resize:vertical;line-height:1.45}'
+    +'.bw-btn{width:100%;background:linear-gradient(180deg,#2E6BFF,#123A9E);color:#fff;border:0;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer}'
+    +'.bw-btn2{width:100%;background:#EEF3FD;color:#20386A;border:1px solid #cddaf0;border-radius:11px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-bottom:12px}'
+    +'.bw-row{display:flex;gap:10px}.bw-row>div{flex:1}'
+    +'.bw-ok{color:#1B7A46;font-size:13px;font-weight:700}'
+    +'.bw-sec{font-family:"Space Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#5D7BB8;margin:16px 0 8px}'
+    +'.bw-post{background:#F4F8FF;border:1px solid #d6e2f5;border-radius:12px;padding:14px;white-space:pre-wrap;font-size:14px;line-height:1.55;color:#10254A}'
+    +'.bw-lens{font-weight:800;color:#123A9E;font-size:13px;margin-bottom:7px}'
+    +'.bw-fix{font-size:11px;color:#6C82AB;margin-top:9px;line-height:1.4}'
+    +'.bw-fix b{color:#42588A}'
+    +'.bw-facts{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}'
+    +'.bw-f{background:#F4F8FF;border:1px solid #d6e2f5;border-radius:9px;padding:7px 10px;font-size:12px;color:#22375f}'
+    +'.bw-f b{display:block;font-size:9px;color:#7E93C4;text-transform:uppercase;letter-spacing:.1em}'
+    +'.bw-tags{margin-top:11px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}'
+    +'.bw-tag{border-radius:99px;padding:4px 11px;font-size:11px;font-weight:700}'
+    +'.bw-slopok{background:#E4F7EC;color:#1B7A46}.bw-slopbad{background:#FDECEF;color:#B23A54}'
+    +'.bw-tpl{background:#E3ECFF;color:#20386A}'
+    +'.bw-fill{background:#123A9E;color:#fff;border:0;border-radius:99px;padding:9px 18px;font-size:12.5px;font-weight:800;cursor:pointer;margin-left:auto}'
+    +'.bw-copy{background:#EEF3FD;color:#20386A;border:1px solid #cddaf0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;cursor:pointer}'
+    +'#bw_back{position:fixed;left:14px;bottom:14px;z-index:9999;background:#fff;color:#123A9E;border:1px solid #cddaf0;border-radius:99px;padding:11px 18px;font-size:13px;font-weight:800;box-shadow:0 12px 30px -12px rgba(18,58,158,.35);cursor:pointer}'
+    +'.bw-warn{background:#FDECEF;border:1px solid #F3B6C2;color:#B23A54;border-radius:12px;padding:12px;font-size:13px}'
+    +'.bw-dd{position:relative}'
+    +'.bw-ddbtn{width:100%;text-align:left;background:#F4F8FF;border:1px solid #cddaf0;border-radius:10px;color:#0B1B3A;padding:12px;font-size:15px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:inherit}'
+    +'.bw-ddcar{color:#5D7BB8;font-size:12px;margin-left:8px}'
+    +'.bw-ddlist{display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #cddaf0;border-radius:12px;box-shadow:0 18px 40px -12px rgba(18,58,158,.28);z-index:60;overflow:hidden;max-height:340px;overflow-y:auto}'
+    +'.bw-dd.open .bw-ddlist{display:block}'
+    +'.bw-ddo{padding:13px 14px;font-size:15px;color:#20386A;cursor:pointer;border-bottom:1px solid #eef3fd}'
+    +'.bw-ddo:last-child{border-bottom:0}'
+    +'.bw-ddo.sel{background:#EEF3FD;font-weight:800;color:#123A9E}'
+    +'.bw-thumbs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}'
+    +'.bw-th{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1px solid #cddaf0;background:#F4F8FF}'
+    +'.bw-th img{width:100%;height:100%;object-fit:cover;display:block}'
+    +'.bw-thx{position:absolute;top:2px;right:2px;background:#123A9E;color:#fff;border:0;border-radius:99px;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer;padding:0}'
+    +'.bw-needcard{border-color:#F0DCA0!important}'
+    +'.bw-needh{font-weight:800;color:#8A6D1F;font-size:14.5px;margin-bottom:6px}'
+    +'.bw-needb{font-size:13px;color:#5C4A18;margin-bottom:9px}'
+    +'.bw-edit{background:#EEF3FD;color:#20386A;border:1px solid #cddaf0;border-radius:99px;padding:8px 16px;font-size:12.5px;font-weight:800;cursor:pointer}'
+    +'.bw-editbox{margin-top:11px;background:#F4F8FF;border:1px solid #cddaf0;border-radius:12px;padding:12px}'
+    +'.bw-editbox textarea{width:100%;box-sizing:border-box;min-height:90px;background:#fff;border:1px solid #cddaf0;border-radius:10px;padding:11px;font-size:14px;line-height:1.5;color:#10254A;resize:vertical;margin-bottom:9px}'
+    +'.bw-editrow{display:flex;gap:9px}'
+    +'.bw-editsave{flex:1;background:linear-gradient(180deg,#2E6BFF,#123A9E);color:#fff;border:0;border-radius:10px;padding:11px;font-size:13px;font-weight:800;cursor:pointer}'
+    +'.bw-editcancel{background:#fff;color:#5D7BB8;border:1px solid #cddaf0;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:700;cursor:pointer}'
+    +'.bw-editnote{font-size:10.5px;color:#7E93C4;margin-top:8px;line-height:1.4}'
+    +'.bw-lesson{background:#E4F7EC;border:1px solid #b9e6cb;color:#1B7A46;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-top:9px}'
+    +'.bw-mut{font-size:11px;color:#8CA3CC;margin-top:7px}';
+    document.head.appendChild(s);
+  }
+
+  function panelHTML(){
+    return '<div class="bw-wrap">'
+     +'<div class="bw-card">'
+     +'<div class="bw-lab">optional · pull real facts first</div>'
+     +'<div class="bw-row"><div><input id="bw_proj" class="bw-in" placeholder="project e.g. Wallchain" style="margin-bottom:0"></div>'
+     +'<div style="flex:1.2"><textarea id="bw_root" class="bw-in" rows="2" placeholder="link" style="margin-bottom:0;min-height:54px;resize:vertical"></textarea></div></div>'
+     +'<div style="height:10px"></div>'
+     +'<button id="bw_gather" class="bw-btn2">pull facts (free)</button>'
+     +'<div id="bw_facts"></div>'
+     +'<div class="bw-lab">what\'s it about</div>'
+     +'<textarea id="bw_topic" class="bw-in" placeholder="topic or paste facts... e.g. rank 13 on wallchain, 7.53 quacks yesterday, quacks convert at TGE"></textarea>'
+     +'<button id="bw_shotbtn" class="bw-btn2" type="button">+ attach screenshot(s) of content to rewrite</button>'
+     +'<input id="bw_shotfile" type="file" accept="image/*" multiple style="display:none">'
+     +'<div id="bw_thumbs" class="bw-thumbs"></div>'
+     +'<div class="bw-row">'
+     +'<div><div class="bw-lab">type</div>'+ddHTML('bw_type_dd',TYPE_OPTS,'deepdive')+'</div>'
+     +'<div style="max-width:104px"><div class="bw-lab">versions</div>'+ddHTML('bw_n_dd',N_OPTS,'2')+'</div>'
+     +'</div>'
+     +'<button id="bw_go" class="bw-btn">write + design it (fires api · cents)</button>'
+     +'<div class="bw-mut">runs the critique loop, then fills your real template. the api only fires on this button.</div>'
+     +'</div>'
+     +'<div id="bw_out"></div></div>';
+  }
+
+  async function gather(){
+    const proj=$('bw_proj').value, root=$('bw_root').value;
+    if(!proj){ return; }
+    $('bw_facts').innerHTML='<div class="bw-mut">gathering… opening the site, pulling numbers, reading X…</div>';
+    try{
+      const r=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:proj,root:root,session:BW_SESSION})});
+      const j=await r.json(); const b=j.brief||{}; window.__bwHasBrief=true;
+      const facts=Object.keys(b.live_numbers||{}).map(k=>'<div class="bw-f"><b>'+E(k)+'</b>'+E(b.live_numbers[k])+'</div>').join('')||'<div class="bw-mut">no live numbers found — type facts above.</div>';
+      $('bw_facts').innerHTML='<div class="bw-ok" style="margin:2px 0 6px">✓ facts pulled · $0.00 · will be used in the write</div><div class="bw-facts">'+facts+'</div>';
+    }catch(e){ $('bw_facts').innerHTML='<div class="bw-warn">could not gather. type facts above instead.</div>'; }
+  }
+
+  async function compose(){
+    const topic=$('bw_topic').value.trim();
+    const tb=document.querySelector('#bw_type_dd .bw-ddbtn'), nb=document.querySelector('#bw_n_dd .bw-ddbtn');
+    const type=tb?tb.getAttribute('data-v'):'deepdive', n=+((nb&&nb.getAttribute('data-v'))||2);
+    if(!topic && !shots.length){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">type what it\'s about, or attach a screenshot of the content.</div></div>'; return; }
+    const um=topic.match(/https?:\/\/[^\s]+/);
+    if(um && !window.__bwHasBrief){
+      $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">found a link in your topic &mdash; pulling its facts first (free)&hellip;</div></div>';
+      try{
+        var u=new URL(um[0]);
+        var seg=u.pathname.split('/').filter(Boolean)[0]||'';
+        var pj=$('bw_proj').value.trim()||seg||u.hostname.replace('www.','').split('.')[0];
+        var rr=await fetch('/gather',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proj:pj,root:um[0],session:BW_SESSION})});
+        await rr.json(); window.__bwHasBrief=true;
+      }catch(e){}
+    }
+    $('bw_out').innerHTML='<div class="bw-card"><div class="bw-mut">'+(shots.length?'reading your screenshot(s), then rewriting through the loop…':'writing '+n+' version(s) through the loop, then designing…')+'</div></div>';
+    try{
+      const r=await fetch('/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,type:type,n:n,usebrief:window.__bwHasBrief,images:shots,session:BW_SESSION})});
+      const res=await r.json(); renderVersions(res);
+    }catch(e){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">write failed. try again.</div></div>'; }
+  }
+
+  function renderVersions(res){
+    if(res.error==='need_facts'){ $('bw_out').innerHTML='<div class="bw-card bw-needcard">'
+      +'<div class="bw-needh">the writer won\'t make things up</div>'
+      +'<div class="bw-needb">it needs real facts on this first — so it never hallucinates:</div>'
+      +'<div class="bw-post" style="background:#FFF9EC;border-color:#F0E0B8;color:#5C4A18">'+E(res.message||'')+'</div>'
+      +'<div class="bw-mut">&#8594; put the project\'s real link up top and hit <b>pull facts</b>, or paste specifics into the box, then write again.</div></div>'; return; }
+    if(res.error){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">'+E(res.error)+'<br><br>'+E(res.message||'')+'</div></div>'; return; }
+    const vs=res.versions||[]; if(!vs.length){ $('bw_out').innerHTML='<div class="bw-card"><div class="bw-warn">no versions came back.</div></div>'; return; }
+    window.__bwStore={};
+    let out='<div class="bw-card"><div class="bw-ok">✓ '+vs.length+' version(s) · '+E(res.type_label||'')+' · run $'+E(res.run_cost_usd)+' · month $'+E(res.month_spent_usd)+'</div>'
+      +(res.source?'<div class="bw-mut" style="margin-top:6px"><b>receipts it read:</b> '+E(res.source)+'</div>':'')+'</div>';
+    vs.forEach(function(v,i){
+      const id='v'+i; window.__bwStore[id]=v;
+      const slop=v.slop||[], inv=v.invented||[], fab=v.fab||[];
+      const slopTag=slop.length?'<span class="bw-tag bw-slopbad">&#9888; slop: '+E(slop.join(', '))+'</span>':'<span class="bw-tag bw-slopok">&#10003; clean</span>';
+      const invTag=inv.length?'<span class="bw-tag bw-slopbad">&#9888; numbers not in the source: '+E(inv.slice(0,4).join(', '))+'</span>':'';
+      const fabTag=fab.length?'<span class="bw-tag bw-slopbad">&#9888; fabricated experience: "'+E(fab.join('", "'))+'" — he never lived this</span>':'';
+      const fixedTag=v.fixed?'<span class="bw-tag" style="background:#E4F7EC;color:#1B7A46">&#10003; '+E(v.fixnote||'self-corrected')+'</span>':'';
+      const fix=v.critique?'<div class="bw-fix"><b>loop fixed:</b> '+E(v.critique)+'</div>':'';
+      out+='<div class="bw-card">'
+        +'<div class="bw-lens">'+E(v.lens||('version '+(i+1)))+'</div>'
+        +'<div class="bw-post">'+E(v.draft||'')+'</div>'
+        +fix
+        +'<div class="bw-tags"><span class="bw-tag bw-tpl">'+E(v.template||'&mdash;')+'</span>'+fixedTag+slopTag+invTag+fabTag
+        +'<button class="bw-copy" data-id="'+id+'">copy</button>'
+        +'<button class="bw-edit" data-id="'+id+'">&#9998; my edit</button>'
+        +'<button class="bw-fill" onclick="__bwFill(\''+id+'\')">fill the '+E(v.template||'template')+' &#8594;</button></div>'
+        +'<div class="bw-editslot" data-slot="'+id+'"></div>'
+        +'</div>';
+    });
+    $('bw_out').innerHTML=out;
+  }
+
+  function fallbackCopy(t){ var ta=document.createElement('textarea'); ta.value=t; ta.style.cssText='position:fixed;left:-999px'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} ta.remove(); }
+
+  window.__bwFill=function(id){
+    const v=(window.__bwStore||{})[id]; if(!v)return;
+    const tpl=(v.template&&T[v.template])?v.template:'quote';
+    openT(tpl);
+    const slots=v.slots||{};
+    const ids=(T[tpl].slots||[]).map(function(s){return s.id;});
+    Object.keys(slots).forEach(function(k){ if(ids.indexOf(k)>=0){ try{ setV(k, String(slots[k])); }catch(e){} } });
+    // fallback: if nothing matched, put first line into first text slot
+    var matched=Object.keys(slots).some(function(k){return ids.indexOf(k)>=0;});
+    if(!matched){ var line=(v.draft||'').split(NL).find(function(x){return x.trim();})||''; var ts=(T[tpl].slots||[]).filter(function(s){return s.t==='text';}); if(ts[0])setV(ts[0].id,line.slice(0,90)); }
+    // bring the editor forward
+    var ws=$('wscr'); if(ws)ws.classList.remove('on');
+    document.body.classList.remove('bmode');
+    document.querySelectorAll('.screen').forEach(function(x){x.classList.remove('on');});
+    var ed=$('editor'); if(ed)ed.classList.add('on');
+    if(ed && !document.getElementById('bw_back')){
+      var bp=document.createElement('button'); bp.id='bw_back'; bp.type='button';
+      bp.innerHTML='&#8592; back to drafts';
+      bp.onclick=function(){ if(typeof goWriter==='function') goWriter(); };
+      ed.appendChild(bp);
+    }
+    window.scrollTo(0,0);
+  };
+
+  function mountIntoWriter(){
+    const ws=$('wscr'); if(!ws)return;
+    const body=ws.querySelector('.wbody'); if(!body||body.dataset.bw)return;
+    styles(); body.dataset.bw='1'; body.innerHTML=panelHTML();
+    $('bw_gather').onclick=gather; $('bw_go').onclick=compose;
+    $('bw_shotbtn').onclick=function(){$('bw_shotfile').click();};
+    $('bw_shotfile').onchange=function(e){addShots(e.target.files); e.target.value='';};
+    drawThumbs();
+  }
+  if(typeof window.goWriter==='function'){
+    const orig=window.goWriter;
+    window.goWriter=function(){ orig(); setTimeout(mountIntoWriter,30); };
+  }
+  function editBoxHTML(id, txt){
+    return '<div class="bw-editbox">'
+      +'<textarea id="bw_edittxt_'+id+'">'+E(txt)+'</textarea>'
+      +'<div class="bw-editrow"><button class="bw-editsave" data-id="'+id+'">save & learn</button>'
+      +'<button class="bw-editcancel" data-id="'+id+'">cancel</button></div>'
+      +'<div class="bw-editnote">what you post is the real answer. this teaches the writer to stop making the mistake you just fixed \u2014 it does not overwrite your draft above.</div>'
+      +'</div>';
+  }
+
+  async function saveEdit(id){
+    var slot=document.querySelector('.bw-editslot[data-slot="'+id+'"]'); if(!slot)return;
+    var ta=$('bw_edittxt_'+id); if(!ta)return;
+    var v=(window.__bwStore||{})[id]; var original=v?(v.draft||''):'';
+    var edited=ta.value;
+    var btn=slot.querySelector('.bw-editsave'); if(btn){ btn.textContent='learning\u2026'; btn.disabled=true; }
+    try{
+      var r=await fetch('/learn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original:original,edited:edited})});
+      var j=await r.json();
+      if(j.error){ slot.innerHTML='<div class="bw-editnote">'+E(j.message||'nothing to learn.')+'</div>'; return; }
+      slot.innerHTML='<div class="bw-lesson">&#10003; learned: '+E(j.lesson||'saved')+'</div>';
+    }catch(e){ slot.innerHTML='<div class="bw-warn">could not save the edit. try again.</div>'; }
+  }
+
+  document.addEventListener('click',function(e){
+    var ed=e.target.closest?e.target.closest('.bw-edit'):null;
+    if(ed){ var id=ed.getAttribute('data-id'); var slot=document.querySelector('.bw-editslot[data-slot="'+id+'"]');
+      if(slot){ var v=(window.__bwStore||{})[id]; var txt=v?(v.draft||''):'';
+        slot.innerHTML = slot.innerHTML ? '' : editBoxHTML(id, txt); }
+      e.stopPropagation(); return; }
+    var es=e.target.closest?e.target.closest('.bw-editsave'):null;
+    if(es){ saveEdit(es.getAttribute('data-id')); e.stopPropagation(); return; }
+    var ec=e.target.closest?e.target.closest('.bw-editcancel'):null;
+    if(ec){ var id2=ec.getAttribute('data-id'); var slot2=document.querySelector('.bw-editslot[data-slot="'+id2+'"]'); if(slot2)slot2.innerHTML=''; e.stopPropagation(); return; }
+    var cp=e.target.closest?e.target.closest('.bw-copy'):null;
+    if(cp){ var v=(window.__bwStore||{})[cp.getAttribute('data-id')]; var txt=v?(v.draft||''):'';
+      var done=function(){ cp.textContent='copied \u2713'; setTimeout(function(){cp.textContent='copy';},1400); };
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done,function(){ fallbackCopy(txt); done(); }); }
+      else { fallbackCopy(txt); done(); }
+      e.stopPropagation(); return; }
+    var tx=e.target.closest?e.target.closest('.bw-thx'):null;
+    if(tx){ shots.splice(+tx.getAttribute('data-i'),1); drawThumbs(); e.stopPropagation(); return; }
+    var opt=e.target.closest?e.target.closest('.bw-ddo'):null;
+    if(opt){ var dd=opt.closest('.bw-dd'), b=dd.querySelector('.bw-ddbtn'); b.innerHTML=E(opt.textContent.trim())+'<span class="bw-ddcar">&#9662;</span>'; b.setAttribute('data-v',opt.getAttribute('data-v')); dd.querySelectorAll('.bw-ddo').forEach(function(x){x.classList.remove('sel');}); opt.classList.add('sel'); dd.classList.remove('open'); e.stopPropagation(); return; }
+    var btn=e.target.closest?e.target.closest('.bw-ddbtn'):null;
+    if(btn){ var d2=btn.closest('.bw-dd'), was=d2.classList.contains('open'); document.querySelectorAll('.bw-dd.open').forEach(function(x){x.classList.remove('open');}); if(!was)d2.classList.add('open'); e.stopPropagation(); return; }
+    document.querySelectorAll('.bw-dd.open').forEach(function(x){x.classList.remove('open');});
+  });
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ if($('wscr')&&$('wscr').classList.contains('on'))mountIntoWriter(); },200); });
+})();
+</script>

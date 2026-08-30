@@ -5,6 +5,7 @@ Serves the studio app at /app and the worker page at /.
 """
 import urllib.request, urllib.error, json, re, ssl, hashlib, os, time, html, socket, base64, gzip, hmac, ipaddress, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie
 from urllib.parse import urlparse, quote, unquote, urljoin
 
 EMBEDDED_VOICE = """You are ghost-writing AS @cmvng. Below is how he ACTUALLY writes, distilled from 1,348 of his real tweets, plus a bank of his real posts. Match the SHAPE, RHYTHM and RESTRAINT of those examples above any generic idea of a 'good crypto post'. He openly hates long-form explainer threads (his own words: "I get tired of reading long form contents on X... the original idea for X was short form").
@@ -112,9 +113,13 @@ import urllib.request, json, re, ssl, hashlib, os, time
 CTX = ssl.create_default_context()
 UA = {'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36'}
 PROXY = os.environ.get('PROXY_URL', '').strip()
+try:
+    RESEARCH_DEADLINE_SECONDS = max(5.0, min(float(os.environ.get('RESEARCH_DEADLINE_SECONDS', '35')), 60.0))
+except ValueError:
+    RESEARCH_DEADLINE_SECONDS = 35.0
 
 def _opener():
-    handlers = []
+    handlers = [_SafeRedirectHandler()]
     if PROXY:
         handlers.append(urllib.request.ProxyHandler({'http': PROXY, 'https': PROXY}))
     return urllib.request.build_opener(*handlers)
@@ -135,6 +140,15 @@ def _safe_public_url(url):
         return True
     except Exception:
         return False
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Validate every redirect hop, not only the user-supplied first URL."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urljoin(req.full_url, newurl)
+        if not _safe_public_url(target):
+            raise urllib.error.HTTPError(target, 403, 'redirect target is not public', headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, target)
 
 def fetch(url, binary=False, timeout=10):
     if not _safe_public_url(url):
@@ -213,333 +227,120 @@ def _meaningful_evidence(value):
     return len(value) >= 36 and len(words) >= 6
 
 
-def _extract_link_source(source_url):
-    """Read the exact pasted page or X post instead of silently collapsing it to a domain/profile."""
-    out = {'url': source_url or '', 'kind': '', 'title': '', 'author': '', 'excerpts': [], 'images': [], 'x_handle': ''}
-    if not source_url or not _safe_public_url(source_url):
-        return out
-    try:
-        parsed = urlparse(source_url)
-        host = (parsed.hostname or '').lower().removeprefix('www.')
-    except Exception:
-        return out
-
-    if host in ('x.com', 'twitter.com', 'mobile.twitter.com', 'mobile.x.com'):
-        parts = [p for p in parsed.path.split('/') if p]
-        out['x_handle'] = re.sub(r'[^A-Za-z0-9_]', '', parts[0]) if parts else ''
-        status = re.search(r'/status/(\d+)', parsed.path)
-        if status:
-            out['kind'] = 'exact X post'
-            raw = fetch('https://cdn.syndication.twimg.com/tweet-result?id=%s&lang=en' % status.group(1), timeout=12)
-            if raw:
-                try:
-                    item = json.loads(raw)
-                    body = _readable(item.get('text') or '')
-                    user = item.get('user') or {}
-                    out['author'] = '@' + str(user.get('screen_name') or out['x_handle'])
-                    out['title'] = str(user.get('name') or out['author']) + ' on X'
-                    if body: out['excerpts'].append(body[:1800])
-                    for media in (item.get('mediaDetails') or [])[:4]:
-                        url = media.get('media_url_https') or media.get('media_url')
-                        if url: out['images'].append(url)
-                except Exception:
-                    pass
-            if not out['excerpts']:
-                raw = fetch('https://publish.twitter.com/oembed?omit_script=1&dnt=1&url=' + quote(source_url), timeout=12)
-                if raw:
-                    try:
-                        item = json.loads(raw)
-                        body = _html_text(item.get('html') or '')
-                        out['author'] = _readable(item.get('author_name') or '')
-                        out['title'] = (out['author'] + ' on X').strip()
-                        if body: out['excerpts'].append(body[:1800])
-                    except Exception:
-                        pass
-        else:
-            out['kind'] = 'X profile'
-        return out
-
-    out['kind'] = 'provided webpage'
-    raw = fetch(source_url, timeout=15)
-    if not raw:
-        return out
-    title = re.search(r'<title[^>]*>(.*?)</title>', raw, re.I | re.S)
-    meta_title = _meta_value(raw, 'og:title', 'twitter:title')
-    out['title'] = _html_text(meta_title or (title.group(1) if title else ''))
-    description = _meta_value(raw, 'description', 'og:description', 'twitter:description')
-    if description:
-        value = _html_text(description)
-        if _meaningful_evidence(value): out['excerpts'].append(value[:1000])
-    for match in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.I):
-        try: value = _readable(json.loads('"' + match.group(1) + '"'))
-        except Exception: value = ''
-        if len(value) > 80: out['excerpts'].append(value[:2400])
-    article = re.search(r'<article[^>]*>(.*?)</article>', raw, re.I | re.S)
-    scope = article.group(1) if article else raw
-    for para in re.findall(r'<p[^>]*>(.*?)</p>', scope, re.I | re.S):
-        value = _html_text(para)
-        if len(value) > 55: out['excerpts'].append(value[:650])
-        if len(out['excerpts']) >= 8: break
-    unique = []
-    for value in out['excerpts']:
-        key = re.sub(r'\W+', '', value.lower())[:180]
-        if key and all(key != prior[0] for prior in unique): unique.append((key, value))
-    out['excerpts'] = [value for _, value in unique][:8]
-    og_image = _meta_value(raw, 'og:image', 'twitter:image')
-    if og_image: out['images'].append(urljoin(source_url, og_image))
-    return out
-
-
-def gather(project, root_url, assets_dir):
-    """Return a source-aware dossier for one project."""
-    os.makedirs(assets_dir, exist_ok=True)
-    project = _readable(str(project or ''))[:120]
-    supplied_root = str(root_url or '').strip()
-    link_source = _extract_link_source(supplied_root)
-    slug_guess = re.sub(r'[^a-z0-9]', '', project.lower())
-    x_handle = link_source.get('x_handle', '')
-    root_url = supplied_root
-    try:
-        parsed = urlparse(supplied_root if '://' in supplied_root else 'https://' + supplied_root)
-        host = (parsed.hostname or '').lower().removeprefix('www.')
-        if host in ('x.com', 'twitter.com', 'mobile.twitter.com', 'mobile.x.com'):
-            parts = [p for p in parsed.path.split('/') if p]
-            if parts and parts[0].lower() not in ('home', 'explore', 'search', 'i'):
-                x_handle = re.sub(r'[^A-Za-z0-9_]', '', parts[0])
-            root_url = ''
-        elif parsed.scheme in ('http', 'https') and parsed.hostname:
-            root_url = parsed.geturl()
-        else:
-            root_url = ''
-    except Exception:
-        root_url = ''
-
-    # Discover the canonical CoinGecko record instead of assuming the project name is the API slug.
-    coin_slug = ''
-    coin_profile = None
-    search = fetch('https://api.coingecko.com/api/v3/search?query=' + quote(project))
-    if search:
-        try:
-            rows = json.loads(search).get('coins', [])[:12]
-            q = re.sub(r'[^a-z0-9]', '', project.lower())
-            def score(row):
-                name = re.sub(r'[^a-z0-9]', '', str(row.get('name', '')).lower())
-                symbol = re.sub(r'[^a-z0-9]', '', str(row.get('symbol', '')).lower())
-                cid = re.sub(r'[^a-z0-9]', '', str(row.get('id', '')).lower())
-                if q and q == name: return 0
-                if q and q in (symbol, cid): return 1
-                if q and (q in name or name in q): return 2
-                return 99
-            rows = sorted(rows, key=score)
-            if rows and score(rows[0]) < 99:
-                coin_slug = str(rows[0].get('id', ''))
-        except Exception:
-            pass
-    if not coin_slug:
-        coin_slug = slug_guess
-    if coin_slug:
-        raw_profile = fetch('https://api.coingecko.com/api/v3/coins/%s?localization=false&tickers=false&community_data=false&developer_data=false' % quote(coin_slug))
-        if raw_profile:
-            try:
-                coin_profile = json.loads(raw_profile)
-                links = coin_profile.get('links') or {}
-                homes = [u for u in (links.get('homepage') or []) if str(u).startswith(('http://', 'https://'))]
-                if not root_url and homes: root_url = homes[0]
-                if not x_handle: x_handle = re.sub(r'[^A-Za-z0-9_]', '', str(links.get('twitter_screen_name') or ''))
-            except Exception:
-                coin_profile = None
-
-    D = {'project': project, 'root': root_url, 'source_url': supplied_root, 'source_kind': link_source.get('kind', ''),
-         'source_excerpt': link_source.get('excerpts', []), 'when': time.strftime('%Y-%m-%d %H:%M'),
-         'facts': [('project name', project)] if project else [], 'news': [], 'walked': [], 'x_pulse': [],
-         'images': [], 'kept': [], 'sources': [], 'research_status': 'partial'}
-    if supplied_root and link_source.get('kind'):
-        D['sources'].append({'kind': link_source['kind'], 'url': supplied_root, 'status': 'user supplied'})
-    if root_url and root_url != supplied_root:
-        D['sources'].append({'kind': 'official site', 'url': root_url, 'status': 'primary'})
-    elif root_url and not D['sources']:
-        D['sources'].append({'kind': 'provided webpage', 'url': root_url, 'status': 'user supplied'})
-    if x_handle and link_source.get('kind') != 'exact X post':
-        D['sources'].append({'kind': 'X profile', 'url': 'https://x.com/' + x_handle, 'status': 'user supplied'})
-    if link_source.get('title'): D['facts'].append(('source title', link_source['title'][:240]))
-    if link_source.get('author'): D['facts'].append(('source author', link_source['author'][:120]))
-    for image_url in link_source.get('images', []): D['images'].append(('source image', image_url))
-    if coin_profile:
-        D['sources'].append({'kind': 'CoinGecko', 'url': 'https://www.coingecko.com/en/coins/' + coin_slug, 'status': 'secondary'})
-        desc = _readable(_clean(((coin_profile.get('description') or {}).get('en') or '')))
-        if desc: D['facts'].append(('project description', desc[:520]))
-
-    # 1 — the project's own site, when a valid project-specific site was supplied or discovered.
-    walked_n=[0]
-    html = fetch(root_url) if root_url else None
-    if html:
-        parsed_root = urlparse(root_url)
-        base_origin = '%s://%s' % (parsed_root.scheme, parsed_root.netloc)
-        t = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
-        site_description = _html_text(_meta_value(html, 'description', 'og:description', 'twitter:description'))
-        if t: D['facts'].append(('site title', _html_text(t.group(1))))
-        if site_description: D['facts'].append(('site description', site_description[:520]))
-        share_image = _meta_value(html, 'og:image', 'twitter:image')
-        if share_image: D['images'].append(('share image', urljoin(root_url, share_image)))
-        txt = re.sub(r'<[^>]+>', ' ', html)
-        for m in re.finditer(r'(20\d\d/\d{1,2}/\d{1,2})\s*·?\s*([A-Z][A-Za-z0-9 $&\.\-]{6,60})', txt):
-            item = (m.group(1), m.group(2).strip().title())
-            if item not in D['news']: D['news'].append(item)
-        links = []
-        for m in re.finditer(r'href="(/[a-z\-/]{3,40})"', html):
-            u = m.group(1)
-            if u not in links and 'favicon' not in u: links.append(u)
-        for u in links:
-            if walked_n[0] >= 6: break
-            if any(k in u for k in ['blog', 'news', 'ecosystem', 'about', 'docs']):
-                h = fetch(base_origin + u)
-                if h:
-                    heads = [_clean(x) for x in re.findall(r'<h[12][^>]*>(.*?)</h[12]>', h)]
-                    heads = [x for x in heads if len(x) > 4][:5]
-                    if heads:
-                        D['walked'].append({'page': u.strip('/').replace('-', ' '), 'points': heads}); walked_n[0]+=1
-        for m in list(re.finditer(r'src="(https?://[^"]+\.(?:png|jpg|webp|svg))"', html))[:6]:
-            D['images'].append(('site asset', m.group(1)))
-
-    # 2 — live numbers (free public APIs; canonical slug discovered above)
-    slug = coin_slug or slug_guess
-    got_token = False
-    cg = json.dumps(coin_profile) if coin_profile else None
-    if cg:
-        try:
-            j = json.loads(cg); md = j.get('market_data', {})
-            def g(path, d=0):
-                x = md
-                for k in path: x = (x or {}).get(k, {})
-                return x if x not in ({}, None) else d
-            price = g(['current_price', 'usd'], 0)
-            if price:
-                got_token = True
-                D['facts'] += [
-                    ('price usd', '$%s' % price),
-                    ('market cap', '$%s' % f"{int(g(['market_cap', 'usd'], 0)):,}"),
-                    ('24h change', '%.2f%%' % (md.get('price_change_percentage_24h') or 0)),
-                    ('all-time high', '$%s' % g(['ath', 'usd'])),
-                    ('down from ath', '%.1f%%' % (g(['ath_change_percentage', 'usd'], 0))),
-                ]
-                img = j.get('image', {}).get('large')
-                if img: D['images'].append(('token logo', img))
-        except Exception:
-            pass
-    if not got_token:
-        D['facts'].append(('token price', 'no token found (probably none exists)'))
-    ll = fetch('https://api.llama.fi/v2/chains')
-    if ll:
-        try:
-            rows = json.loads(ll)
-            hit = [r for r in rows if slug in ((r.get('name') or '') + (r.get('gecko_id') or '')).lower().replace(' ', '')]
-            if hit:
-                D['facts'].append(('TVL', '$%s' % f"{int(hit[0].get('tvl') or 0):,}"))
-        except Exception:
-            pass
-
-    # 3 — the project's own X posts (public syndication, no login)
-    social_slug = x_handle or slug
-    syn = fetch('https://syndication.twitter.com/srv/timeline-profile/screen-name/%s' % quote(social_slug)) if social_slug else None
-    if syn:
-        texts = []
-        try:
-            # syndication returns JSON; parse it so unicode decodes correctly
-            for m in re.finditer(r'"full_text":"((?:[^"\\]|\\.)*)"', syn):
-                raw = '"' + m.group(1) + '"'
-                try: texts.append(json.loads(raw))
-                except Exception: pass
-        except Exception:
-            pass
-        for t in texts[:6]:
-            t = re.sub(r'https?://\S+', '', t).strip()
-            t = _readable(t)
-            if len(t) > 12: D['x_pulse'].append(('@' + social_slug, t[:200]))
-
-    # 4 — wider X chatter via public mirrors (proxy helps a lot here)
-    for m in ['xcancel.com', 'nitter.poast.org', 'nitter.privacydev.net', 'lightbrd.com']:
-        h = fetch('https://%s/search?q=%s&f=tweets' % (m, slug), timeout=6)
-        if h and 'tweet-content' in h:
-            for tm in re.findall(r'tweet-content[^>]*>(.*?)</div>', h, re.S)[:6]:
-                txt = _readable(_clean(tm))
-                if len(txt) > 15: D['x_pulse'].append(('mirror', txt[:200]))
-            break
-
-    # 5 — download the gathered images for the designs
-    for label, u in D['images'][:10]:
-        b = fetch(u, binary=True)
-        if b and len(b) > 500:
-            ext = '.svg' if 'svg' in u else '.png' if 'png' in u else '.jpg'
-            fn = os.path.join(assets_dir, hashlib.md5(u.encode()).hexdigest()[:10] + ext)
-            try:
-                open(fn, 'wb').write(b)
-                D['kept'].append({'label': label, 'file': os.path.basename(fn)})
-            except Exception:
-                pass
-
-    weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
-    meaningful = [f for f in D['facts'] if f[0] not in weak_labels and _meaningful_evidence('%s %s' % f)]
-    excerpts = [value for value in (D.get('source_excerpt') or []) if _meaningful_evidence(value)]
-    news = [item for item in (D.get('news') or []) if _meaningful_evidence(' '.join(map(str, item)))]
-    walked = [item for item in (D.get('walked') or [])
-              if any(_meaningful_evidence(point) for point in (item.get('points') or []))]
-    # Mirror chatter is context, not project evidence. Only the project's own timeline can unlock writing.
-    owned_pulse = [item for item in (D.get('x_pulse') or [])
-                   if item and item[0] != 'mirror' and _meaningful_evidence(item[1])]
-    D['source_excerpt'] = excerpts
-    evidence_count = len(meaningful) + len(excerpts) + len(news) + len(walked) + len(owned_pulse)
-    D['writing_ready'] = evidence_count > 0
-    if evidence_count and D['sources']: D['research_status'] = 'ready'
-    elif evidence_count: D['research_status'] = 'limited'
-    return D
-
-
-def build_brief(D):
-    """Collapse the dossier into the tiny object the writer reads (keeps API cost low)."""
-    facts = dict(D['facts'])
-    weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
-    return {
-        'project': D['project'],
-        'official_source': D.get('root', ''),
-        'source_url': D.get('source_url', ''),
-        'source_kind': D.get('source_kind', ''),
-        'source_excerpt': [value for value in D.get('source_excerpt', []) if _meaningful_evidence(value)][:8],
-        'research_status': D.get('research_status', 'partial'),
-        'writing_ready': bool(D.get('writing_ready')),
-        'sources': D.get('sources', [])[:8],
-        'one_liner': facts.get('site description') or facts.get('project description', ''),
-        'verified_facts': [{'label': k, 'value': v, 'status': 'confirmed'} for k, v in D['facts']
-                           if k not in weak_labels and _meaningful_evidence('%s %s' % (k, v))][:16],
-        'live_numbers': {k: v for k, v in D['facts']
-                         if any(w in k for w in ['price', 'cap', 'change', 'TVL', 'ath', 'high'])},
-        'news_feed': ['%s · %s' % (d, t) for d, t in D['news']][:8],
-        'pages_read': D['walked'][:8],
-        'x_pulse': [{'src': s, 'text': t} for s, t in D['x_pulse']][:10],
-        'assets_for_design': D['kept'],
-    }
-
-
-_PASTED_URL = re.compile(
+_SOURCE_URL_RE = re.compile(
     r'(?:https?://[^\s<>"\']+|(?:www\.)?[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:/[^\s<>"\']*)?)',
     re.I,
 )
 
 
-def _brief_has_evidence(brief):
-    """Re-check stored briefs server-side instead of trusting a UI flag."""
-    if not isinstance(brief, dict) or brief.get('writing_ready') is False:
-        return False
-    if any(_meaningful_evidence(value) for value in (brief.get('source_excerpt') or [])):
+def _normalise_source_url(value):
+    value = str(value or '').strip().strip('<>[]{}').rstrip('),.;!?')
+    if not value:
+        return ''
+    if not re.match(r'^https?://', value, re.I):
+        value = 'https://' + value
+    try:
+        parsed = urlparse(value)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            return ''
+        return parsed.geturl()
+    except Exception:
+        return ''
+
+
+def _source_urls(raw, limit=4):
+    """Extract and normalize a small ordered set of pasted sources."""
+    values = raw if isinstance(raw, (list, tuple)) else [raw]
+    found = []
+    for value in values:
+        text = str(value or '').strip()
+        matches = _SOURCE_URL_RE.findall(text)
+        if not matches and text and not re.search(r'\s', text) and ('.' in text or text.lower().startswith(('http://', 'https://'))):
+            matches = [text]
+        for match in matches:
+            url = _normalise_source_url(match)
+            key = url.lower().rstrip('/')
+            if url and key not in {item.lower().rstrip('/') for item in found}:
+                found.append(url)
+            if len(found) >= limit:
+                return found
+    return found
+
+
+def _research_key(project, sources):
+    urls = sorted(url.lower().rstrip('/') for url in _source_urls(sources))
+    raw = _readable(str(project or '')).lower()[:120] + '|' + '|'.join(urls)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:24]
+
+
+def _looks_blocked_page(raw):
+    sample = str(raw or '')[:120000].lower()
+    markers = (
+        'cf-chl-', 'captcha', 'verify you are human', 'checking your browser', 'just a moment...',
+        'enable javascript and cookies to continue', 'access denied', 'attention required! | cloudflare',
+        'automated access', 'unusual traffic from your computer network',
+    )
+    return any(marker in sample for marker in markers)
+
+
+def _canonical_url(raw, source_url):
+    for tag in re.findall(r'<link\b[^>]*>', raw or '', re.I | re.S):
+        attrs = _html_attrs(tag)
+        rel = {part.lower() for part in re.split(r'\s+', attrs.get('rel', '').strip()) if part}
+        if 'canonical' not in rel or not attrs.get('href'):
+            continue
+        candidate = _normalise_source_url(urljoin(source_url, attrs['href']))
+        if candidate and _safe_public_url(candidate):
+            return candidate
+    return ''
+
+
+def _jsonld_evidence(raw):
+    """Extract article facts from JSON-LD when pages have weak or absent meta tags."""
+    excerpts = []
+
+    def visit(node, inherited_article=False):
+        if isinstance(node, list):
+            for item in node:
+                visit(item, inherited_article)
+            return
+        if not isinstance(node, dict):
+            return
+        node_type = node.get('@type', '')
+        types = node_type if isinstance(node_type, list) else [node_type]
+        is_article = inherited_article or any(str(item).lower() in (
+            'article', 'newsarticle', 'blogposting', 'report', 'techor {}).items()):
         return True
-    if any(_meaningful_evidence('%s %s' % (item.get('label', ''), item.get('value', '')))
-           for item in (brief.get('verified_facts') or []) if isinstance(item, dict)):
+    if any(_meaningful_evidence(value) for value in (brief.get('news_feed') or [])):
         return True
-    if any(_meaningful_evidence('%s %s' % (key, value))
-           for key, value in (brief.get('live_numbers') or {}).items()):
-        return True
-    if any(brief.get(key) for key in ('news_feed', 'pages_read', 'x_pulse')):
-        return True
+    for item in (brief.get('pages_read') or []):
+        if isinstance(item, dict) and any(_meaningful_evidence(point) for point in (item.get('points') or [])):
+            return True
+    for item in (brief.get('x_pulse') or []):
+        if not isinstance(item, dict) or str(item.get('src', '')).lower() == 'mirror':
+            continue
+        if _meaningful_evidence(item.get('text')):
+            return True
     return _meaningful_evidence(brief.get('one_liner'))
+
+
+def _brief_matches_topic(brief, topic):
+    """Prevent a previous project brief in the same session from authorizing a new project."""
+    if not isinstance(brief, dict):
+        return False
+    topic_urls = {url.lower().rstrip('/') for url in _source_urls(topic)}
+    brief_urls = {url.lower().rstrip('/') for url in _source_urls(
+        list(brief.get('source_urls') or []) + [brief.get('source_url', ''), brief.get('official_source', '')]
+    )}
+    if topic_urls and brief_urls and topic_urls.isdisjoint(brief_urls):
+        return False
+    match = re.search(r'^\s*Project\s*:\s*(.+?)\s*$', str(topic or ''), re.I | re.M)
+    if match and brief.get('project'):
+        expected = re.sub(r'[^a-z0-9]', '', str(brief.get('project')).lower().lstrip('@'))
+        actual = re.sub(r'[^a-z0-9]', '', match.group(1).lower().lstrip('@'))
+        if expected and actual and expected != actual:
+            return False
+    return True
 
 
 def _topic_has_concrete_material(topic):
@@ -574,6 +375,27 @@ def _compose_preflight(topic, brief=None, images=None):
                 'Paste the exact article or X post, use the official website/docs, attach screenshots, '
                 'or add concrete facts such as what launched, a date, a number, or a named event.')
     return ''
+
+
+def _valid_image_bytes(media_type, decoded):
+    """Reject mislabeled or truncated data URLs before they count as screenshot evidence."""
+    if not isinstance(decoded, (bytes, bytearray)) or len(decoded) < 32:
+        return False
+    kind = str(media_type or '').lower()
+    if kind == 'image/png':
+        if not (decoded.startswith(b'\x89PNG\r\n\x1a\n') and decoded[12:16] == b'IHDR' and len(decoded) >= 33):
+            return False
+        width, height = int.from_bytes(decoded[16:20], 'big'), int.from_bytes(decoded[20:24], 'big')
+        return 0 < width <= 12000 and 0 < height <= 12000
+    if kind == 'image/jpeg':
+        return decoded.startswith(b'\xff\xd8\xff') and decoded.endswith(b'\xff\xd9')
+    if kind == 'image/gif':
+        width, height = int.from_bytes(decoded[6:8], 'little'), int.from_bytes(decoded[8:10], 'little')
+        return decoded.startswith((b'GIF87a', b'GIF89a')) and 0 < width <= 12000 and 0 < height <= 12000
+    if kind == 'image/webp':
+        declared = int.from_bytes(decoded[4:8], 'little') + 8
+        return decoded.startswith(b'RIFF') and decoded[8:12] == b'WEBP' and declared <= len(decoded)
+    return False
 
 
 
@@ -1351,18 +1173,106 @@ BRIEF_DIR = os.path.join(HERE, 'data', 'briefs')
 ACCESS_KEY = os.environ.get('STUDIO_ACCESS_KEY', '').strip()
 MAX_BODY_BYTES = int(os.environ.get('MAX_BODY_BYTES', str(8 * 1024 * 1024)))
 RATE_LIMIT_PER_MINUTE = int(os.environ.get('RATE_LIMIT_PER_MINUTE', '30'))
+try:
+    RESEARCH_CACHE_TTL_SECONDS = max(0, min(int(os.environ.get('RESEARCH_CACHE_TTL_SECONDS', '300')), 3600))
+except ValueError:
+    RESEARCH_CACHE_TTL_SECONDS = 300
 RATE_BUCKETS = {}
 RATE_LOCK = threading.Lock()
+BRIEF_LOCKS = {}
+BRIEF_LOCKS_LOCK = threading.Lock()
 os.makedirs(ASSETS, exist_ok=True)
 os.makedirs(BRIEF_DIR, exist_ok=True)
 
+def _clean_session(raw):
+    return re.sub(r'[^a-zA-Z0-9_-]', '', str(raw or ''))[:80]
+
+
 def _session_id(data):
-    raw = str((data or {}).get('session', '') or '')
-    clean = re.sub(r'[^a-zA-Z0-9_-]', '', raw)[:80]
+    clean = _clean_session((data or {}).get('session', ''))
     return clean or hashlib.sha256(os.urandom(24)).hexdigest()[:32]
+
+
+def _request_session(data, headers):
+    candidates = [(data or {}).get('session', ''), headers.get('X-Studio-Session', '')]
+    try:
+        cookie = SimpleCookie(headers.get('Cookie', ''))
+        candidates.append(cookie['banger_session'].value if 'banger_session' in cookie else '')
+    except Exception:
+        candidates.append('')
+    for raw in candidates:
+        clean = re.sub(r'[^a-zA-Z0-9_-]', '', str(raw or ''))[:80]
+        if clean:
+            return clean, False
+    return hashlib.sha256(os.urandom(24)).hexdigest()[:32], True
 
 def _brief_path(data):
     return os.path.join(BRIEF_DIR, _session_id(data) + '.json')
+
+
+def _brief_lock(session):
+    with BRIEF_LOCKS_LOCK:
+        if len(BRIEF_LOCKS) > 1024:
+            for key in list(BRIEF_LOCKS)[:256]:
+                BRIEF_LOCKS.pop(key, None)
+        return BRIEF_LOCKS.setdefault(session, threading.Lock())
+
+
+def _load_brief(path):
+    try:
+        with open(path, encoding='utf-8') as fp:
+            value = json.load(fp)
+        return value if isinstance(value, dict) else None
+    except Exception:
+        return None
+
+
+def _save_brief(path, brief):
+    temp = path + '.%s.tmp' % hashlib.sha256(os.urandom(12)).hexdigest()[:10]
+    try:
+        with open(temp, 'w', encoding='utf-8') as fp:
+            json.dump(brief, fp)
+        os.replace(temp, path)
+    finally:
+        if os.path.exists(temp):
+            try: os.remove(temp)
+            except OSError: pass
+
+
+def _fresh_cached_brief(brief, research_key, now=None):
+    if not isinstance(brief, dict) or brief.get('research_key') != research_key or not _brief_has_evidence(brief):
+        return False
+    try:
+        age = (time.time() if now is None else float(now)) - float(brief.get('researched_at_epoch') or 0)
+    except (TypeError, ValueError):
+        return False
+    return RESEARCH_CACHE_TTL_SECONDS > 0 and 0 <= age <= RESEARCH_CACHE_TTL_SECONDS
+
+
+def _research_failure_message(brief):
+    """Return the exact actionable reason the UI should show after a failed gather."""
+    if not isinstance(brief, dict) or brief.get('writing_ready'):
+        return ''
+    status = str(brief.get('research_status') or '').lower()
+    if status == 'blocked':
+        return ('That source blocked automated reading. Paste the exact article or X post, try the official docs, '
+                'or attach screenshots of the facts you want used.')
+    if status == 'timed_out':
+        return ('Research reached its safety time limit before it found enough usable evidence. '
+                'Try fewer links, a direct article or docs page, or attach screenshots.')
+    if status in ('unreadable', 'failed'):
+        return ('I could not read enough evidence from those links. Check that they are public and exact, '
+                'or paste the important facts and screenshots directly.')
+    return ('I found the project name, but not enough verifiable material yet. Paste the official website, docs, '
+            'exact X profile or post, or attach screenshots.')
+
+
+def _gather_payload(brief, cached=False):
+    payload = {'brief': brief, 'cached': bool(cached)}
+    message = _research_failure_message(brief)
+    if message:
+        payload.update({'error': 'need_facts', 'message': message})
+    return payload
 
 def _rate_allowed(client):
     now = time.time()
@@ -1536,6 +1446,8 @@ class H(BaseHTTPRequestHandler):
             encoded = False
         self.send_response(code)
         self.send_header('Content-Type', ctype)
+        if getattr(self, '_session_cookie', ''):
+            self.send_header('Set-Cookie', 'banger_session=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000' % self._session_cookie)
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
@@ -1559,22 +1471,21 @@ class H(BaseHTTPRequestHandler):
         p = self.path.split('?')[0]
         if p in ('/', '/index.html'):
             return self._send(200, PAGE.format(body=STYLED_BLOCK + FORM.format(proj='MegaETH', root='https://www.megaeth.com', out='')))
-        if p == '/app':
+        # /app and /legacy intentionally share the proven original Studio shell.
+        # This preserves the user's familiar template/editor/Builder experience and
+        # injects exactly one generated enhancement bundle into both entry points.
+        if p in ('/app', '/legacy'):
             try:
-                doc = open(os.path.join(ROOT, 'banger-studio-app.html'), 'rb').read().decode('utf-8', 'ignore')
-                return self._send(200, doc)
-            except Exception as e:
-                return self._send(404, 'app not found: ' + str(e))
-        if p == '/legacy':
-            try:
-                doc = open(os.path.join(ROOT, 'legacy-app.html'), 'rb').read().decode('utf-8', 'ignore')
+                with open(os.path.join(ROOT, 'legacy-app.html'), 'rb') as source:
+                    doc = source.read().decode('utf-8', 'ignore')
                 fp = os.path.join(ROOT, 'fuse.html')
                 if os.path.exists(fp):
-                    fuse = open(fp, 'r', encoding='utf-8').read()
+                    with open(fp, 'r', encoding='utf-8') as source:
+                        fuse = source.read()
                     doc = doc.replace('</body>', fuse + '</body>', 1) if '</body>' in doc else doc + fuse
                 return self._send(200, doc)
-            except Exception:
-                return self._send(404, 'legacy app not found')
+            except Exception as exc:
+                return self._send(404, 'studio app not found: ' + str(exc))
         static_files = {
             '/manifest.webmanifest': ('manifest.webmanifest', 'application/manifest+json'),
             '/sw.js': ('sw.js', 'application/javascript; charset=utf-8'),
@@ -1583,7 +1494,9 @@ class H(BaseHTTPRequestHandler):
         if p in static_files:
             name, ctype = static_files[p]
             try:
-                return self._send(200, open(os.path.join(ROOT, name), 'rb').read(), ctype)
+                with open(os.path.join(ROOT, name), 'rb') as source:
+                    content = source.read()
+                return self._send(200, content, ctype)
             except Exception:
                 return self._send(404, 'asset not found')
         if p.startswith('/assets/'):
@@ -1591,7 +1504,9 @@ class H(BaseHTTPRequestHandler):
             if os.path.exists(fp):
                 ext = fp.rsplit('.', 1)[-1]
                 ct = {'svg': 'image/svg+xml', 'png': 'image/png', 'jpg': 'image/jpeg'}.get(ext, 'application/octet-stream')
-                return self._send(200, open(fp, 'rb').read(), ct)
+                with open(fp, 'rb') as source:
+                    content = source.read()
+                return self._send(200, content, ct)
             return self._send(404, 'no asset')
         if p == '/health':
             return self._send(200, json.dumps({'status': 'ok', 'service': 'banger-studio'}), 'application/json')
@@ -1613,31 +1528,53 @@ class H(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(ln) or '{}')
         except Exception:
             return self._send(400, json.dumps({'error': 'bad_json', 'message': 'The request body must be valid JSON.'}), 'application/json')
+        session, created_session = _request_session(data, self.headers)
+        data['session'] = session
+        if created_session:
+            self._session_cookie = session
         if self.path == '/gather':
-            D = gather(data.get('proj', 'MegaETH'), data.get('root', ''), ASSETS)
-            brief = build_brief(D)
-            with open(_brief_path(data), 'w', encoding='utf-8') as fp:
-                json.dump(brief, fp)
+            project = data.get('proj', 'MegaETH')
+            sources = data.get('root', '')
+            research_key = _research_key(project, sources)
+            brief_path = _brief_path(data)
+            with _brief_lock(session):
+                brief = _load_brief(brief_path)
+                if _fresh_cached_brief(brief, research_key):
+                    _log_event('gather.cached', project=str(project)[:80], status=brief.get('research_status'), session=session[:8])
+                    return self._send(200, json.dumps(_gather_payload(brief, cached=True)), 'application/json')
+                try:
+                    D = gather(project, sources, ASSETS)
+                    brief = build_brief(D)
+                except Exception as exc:
+                    _log_event('gather.failed', project=str(project)[:80], error=type(exc).__name__)
+                    brief = {
+                        'project': _readable(str(project or ''))[:120], 'official_source': '',
+                        'source_url': (_source_urls(sources) or [''])[0], 'source_urls': _source_urls(sources),
+                        'source_kind': '', 'source_status': 'failed', 'source_errors': [], 'source_excerpt': [],
+                        'research_status': 'failed', 'research_timed_out': False, 'research_key': research_key,
+                        'researched_at_epoch': int(time.time()), 'writing_ready': False, 'sources': [], 'one_liner': '',
+                        'verified_facts': [], 'live_numbers': {}, 'news_feed': [], 'pages_read': [], 'x_pulse': [],
+                        'assets_for_design': [],
+                    }
+                _save_brief(brief_path, brief)
             _log_event('gather.completed', project=brief.get('project', '')[:80], status=brief.get('research_status'),
                        writing_ready=brief.get('writing_ready'), source_kind=brief.get('source_kind'), sources=len(brief.get('sources') or []),
                        verified_facts=len(brief.get('verified_facts') or []), excerpts=len(brief.get('source_excerpt') or []))
-            return self._send(200, json.dumps({'brief': brief}), 'application/json')
+            return self._send(200, json.dumps(_gather_payload(brief, cached=False)), 'application/json')
         if self.path == '/write':
-            try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
-            except Exception: return self._send(200, '<div class="card"><div class="warn">gather first.</div></div>')
+            brief = _load_brief(_brief_path(data))
+            if not brief: return self._send(200, '<div class="card"><div class="warn">gather first.</div></div>')
             res = write(brief, data.get('angle', ''),
                                want={'threads': int(data.get('th', 2)), 'posts': int(data.get('po', 4)), 'qts': int(data.get('qt', 4))},
                                voice=voice())
             return self._send(200, render_drafts(res))
         if self.path == '/styled':
-            try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
-            except Exception: brief = None
+            brief = _load_brief(_brief_path(data))
             res = write_styled(data.get('topic', ''), data.get('type', 'banger'),
                                n=int(data.get('n', 3)), brief=brief, voice=voice())
             return self._send(200, render_styled(res))
         if self.path == '/compose':
-            try: brief = json.load(open(_brief_path(data), encoding='utf-8'))
-            except Exception: brief = None
+            brief = _load_brief(_brief_path(data))
             imgs = []
             for s in (data.get('images') or [])[:3]:
                 s = str(s)
@@ -1650,10 +1587,10 @@ class H(BaseHTTPRequestHandler):
                         decoded = base64.b64decode(b64, validate=True)
                     except Exception:
                         continue
-                    if not decoded or len(decoded) > 6 * 1024 * 1024:
+                    if len(decoded) > 6 * 1024 * 1024 or not _valid_image_bytes(media_type, decoded):
                         continue
                     imgs.append({'media_type': media_type, 'data': b64})
-            selected_brief = brief if data.get('usebrief') else None
+            selected_brief = brief if data.get('usebrief') and _brief_matches_topic(brief, data.get('topic', '')) else None
             blocker = _compose_preflight(data.get('topic', ''), selected_brief, imgs)
             if blocker:
                 _log_event('compose.blocked', content_type=data.get('type', 'banger'), reason='insufficient_evidence',
@@ -1682,4 +1619,3 @@ class H(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '8080'))
     ThreadingHTTPServer(('0.0.0.0', port), H).serve_forever()
-
