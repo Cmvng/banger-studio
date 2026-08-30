@@ -1830,6 +1830,52 @@ def render_styled(res):
     return ''.join(out)
 
 
+LEGACY_BUILDER_HISTORY_V1 = """let hist=[];
+const undoBtn=document.getElementById('bd_undoBtn');
+function snapshot(){hist.push(JSON.stringify(els));if(hist.length>50)hist.shift();undoBtn.disabled=false;}
+function undo(){if(!hist.length)return;els=JSON.parse(hist.pop());rebuild();deselect();
+ undoBtn.disabled=hist.length===0;}
+undoBtn.onclick=undo;"""
+
+LEGACY_BUILDER_HISTORY_V2 = """let hist=[];
+const undoBtn=document.getElementById('bd_undoBtn');
+function copyHistoryEls(list){return list.map(e=>Object.assign({},e));}
+function snapshot(){
+ if(window.__bapiHistorySuspend)return;
+ hist.push({v:2,els:copyHistoryEls(els),fmt:fmt,bg:canvas.style.background||'',sel:sel});
+ if(hist.length>50)hist.shift();undoBtn.disabled=false;
+}
+function undo(){
+ if(!hist.length)return;
+ const state=hist.pop();
+ if(Array.isArray(state)){els=copyHistoryEls(state);}
+ else{
+  els=copyHistoryEls(state.els||[]);
+  if(state.fmt&&FORMATS[state.fmt]){fmt=state.fmt;CW=FORMATS[fmt][0];CH=FORMATS[fmt][1];}
+  canvas.style.background=state.bg||'';
+ }
+ rebuild();
+ [...fmtWrap.children].forEach(c=>c.classList.toggle('on',c.dataset.f===fmt));
+ hint.style.display=els.length?'none':'';
+ const wanted=!Array.isArray(state)&&state.sel;
+ if(wanted&&els.some(e=>e.id===wanted))select(wanted);else deselect();
+ layout();
+ undoBtn.disabled=hist.length===0;
+ document.dispatchEvent(new CustomEvent('banger:builder-undo',{detail:{format:fmt,background:canvas.style.background||''}}));
+}
+undoBtn.onclick=undo;"""
+
+
+def _patch_legacy_builder_history(document):
+    """Upgrade Builder undo without copying image data into giant JSON strings."""
+    if LEGACY_BUILDER_HISTORY_V2 in document:
+        return document
+    if LEGACY_BUILDER_HISTORY_V1 not in document:
+        _log_event('legacy_history_patch_missing')
+        return document
+    return document.replace(LEGACY_BUILDER_HISTORY_V1, LEGACY_BUILDER_HISTORY_V2, 1)
+
+
 class H(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype='text/html; charset=utf-8'):
         b = body.encode() if isinstance(body, str) else body
@@ -1873,6 +1919,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 with open(os.path.join(ROOT, 'legacy-app.html'), 'rb') as source:
                     doc = source.read().decode('utf-8', 'ignore')
+                doc = _patch_legacy_builder_history(doc)
                 fp = os.path.join(ROOT, 'fuse.html')
                 if os.path.exists(fp):
                     with open(fp, 'r', encoding='utf-8') as source:

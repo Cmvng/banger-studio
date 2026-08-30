@@ -1,4 +1,4 @@
-const CACHE = 'banger-studio-v10';
+const CACHE = 'banger-studio-v11';
 const CACHE_PREFIX = 'banger-studio-';
 const SHELL = ['/manifest.webmanifest', '/icon.svg', '/assets/cmvng-logo.png'];
 
@@ -29,10 +29,9 @@ self.addEventListener('activate', event => {
 async function networkFirstStudio() {
   try {
     const response = await fetch('/legacy', {cache:'no-store'});
-    if (response.ok) {
-      const cache = await caches.open(CACHE);
-      await cache.put('/legacy', response.clone());
-    }
+    if (!response.ok) throw new Error(`Studio returned ${response.status}`);
+    const cache = await caches.open(CACHE);
+    await cache.put('/legacy', response.clone());
     return response;
   } catch (_) {
     const cached = await caches.match('/legacy');
@@ -48,7 +47,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || url.pathname === '/health') return;
 
-  if (url.pathname === '/app' || url.pathname === '/legacy' || event.request.mode === 'navigate') {
+  if (url.pathname === '/app' || url.pathname === '/legacy') {
     event.respondWith(networkFirstStudio());
     return;
   }
