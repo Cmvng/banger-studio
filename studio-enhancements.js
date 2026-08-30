@@ -3,7 +3,7 @@
 
   if (typeof T === 'undefined' || !window.__bapi) return;
 
-  const ENH_VERSION = '7.1.0';
+  const ENH_VERSION = '7.2.0';
   const TEMPLATE_DRAFT_PREFIX = 'banger.template.';
   const BUILDER_DRAFT_KEY = 'banger.builder.autosave.v2';
   const BRAND_LOGO = '/assets/cmvng-logo.png';
@@ -315,7 +315,7 @@
       #bscr .stagewrap{width:100%;min-height:120px;overflow:hidden;isolation:isolate;padding:8px 12px}
       #bscr #bd_stage{flex:0 0 auto;margin:auto}
       #bscr #bd_ov{overflow:visible}
-      #bscr .tool{overscroll-behavior-x:contain;touch-action:pan-x;z-index:18}
+      #bscr .tool{overscroll-behavior-x:contain;touch-action:pan-x;z-index:33}
       #bscr .rail{position:relative;z-index:35;width:100%;min-width:0;min-height:82px;overflow-x:auto;
         overscroll-behavior-x:contain;touch-action:pan-x;scroll-snap-type:x proximity;scroll-padding-left:12px;
         padding-bottom:calc(11px + env(safe-area-inset-bottom));box-shadow:0 -14px 28px -24px rgba(12,27,51,.55);
@@ -325,6 +325,29 @@
       #bscr #bd_undoBtn.bw-undo-ready{background:#17623B!important;color:#fff!important;box-shadow:0 0 0 3px rgba(23,98,59,.16)!important}
       #bscr .bw-clear-tool{color:#A22F49}
       #bscr .bw-format-status{display:none}
+      #bscr #bd_pad.bw-nudge-pad{display:none;position:fixed;left:12px;right:auto;top:12px;bottom:auto!important;
+        width:154px;min-width:0;padding:6px;transform:none!important;z-index:32;overflow:visible;touch-action:none;
+        border:1px solid rgba(189,207,238,.9);border-radius:17px;background:rgba(255,255,255,.96);
+        box-shadow:0 18px 38px -18px rgba(7,17,36,.68);backdrop-filter:blur(14px);user-select:none}
+      #bscr #bd_pad.bw-nudge-pad.on{display:block}
+      #bscr #bd_pad .bw-nudge-head{display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;gap:4px;margin-bottom:5px}
+      #bscr #bd_pad .bw-nudge-drag,#bscr #bd_pad .bw-nudge-reset,#bscr #bd_pad .bw-nudge-collapse{height:44px;min-width:0;
+        border:1px solid #D3DFF1;border-radius:11px;background:#F5F8FE;color:#123A9E;display:flex;align-items:center;justify-content:center}
+      #bscr #bd_pad .bw-nudge-drag{gap:5px;padding:0 8px;cursor:grab;touch-action:none;font:800 8px 'Space Mono';letter-spacing:.03em}
+      #bscr #bd_pad .bw-nudge-drag:active,#bscr #bd_pad.bw-nudge-dragging .bw-nudge-drag{cursor:grabbing;background:#E6EEFF}
+      #bscr #bd_pad .bw-nudge-drag svg,#bscr #bd_pad .bw-nudge-reset svg,#bscr #bd_pad .bw-nudge-collapse svg{width:17px;height:17px;
+        fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+      #bscr #bd_pad .bw-nudge-grid{display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:3px;justify-content:center}
+      #bscr #bd_pad .bw-nudge-grid>button{width:44px;height:44px;min-width:44px;min-height:44px;padding:0}
+      #bscr #bd_pad .bw-nudge-grid>.bw-nudge-spacer{visibility:hidden;pointer-events:none}
+      #bscr #bd_pad .bw-nudge-grid .mid{font-size:8px;line-height:1.1;color:#60749B;pointer-events:none}
+      #bscr #bd_pad.bw-nudge-collapsed{width:54px;padding:4px;border-radius:16px}
+      #bscr #bd_pad.bw-nudge-collapsed .bw-nudge-head{display:block;margin:0}
+      #bscr #bd_pad.bw-nudge-collapsed .bw-nudge-grid,#bscr #bd_pad.bw-nudge-collapsed .bw-nudge-reset,
+      #bscr #bd_pad.bw-nudge-collapsed .bw-nudge-collapse{display:none}
+      #bscr #bd_pad.bw-nudge-collapsed .bw-nudge-drag{width:44px;height:44px;padding:0;border-radius:12px;font-size:0}
+      #bscr #bd_pad.bw-nudge-collapsed .bw-nudge-drag svg{width:20px;height:20px}
+      #bscr #bd_pad.bw-nudge-dragging{transition:none!important;box-shadow:0 22px 44px -15px rgba(7,17,36,.8)}
       .bw-inspector-text{width:100%;min-height:74px;resize:vertical;border:1px solid #CDD9EE;border-radius:10px;
         padding:10px;background:#fff;color:#101C33;font:650 12px/1.45 Sora;outline:none}
       .bw-position-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px}
@@ -349,7 +372,8 @@
         #bscr .stagewrap{padding:7px 10px 6px}
         #bscr .rail{gap:6px;padding-left:8px;padding-right:8px;min-height:76px}
         #bscr .add{min-width:68px;padding:7px 6px}.bw-builder-coach{display:none!important}
-        #bscr #bd_pad{left:8px;bottom:8px;transform:scale(.82);transform-origin:left bottom}
+        #bscr #bd_pad.bw-nudge-pad{transform:none!important}
+        #bscr #bd_pad .bw-nudge-drag,#bscr #bd_pad .bw-nudge-reset,#bscr #bd_pad .bw-nudge-collapse{min-height:44px;height:44px}
       }
       @media(max-width:345px){
         #bscr .top{grid-template-columns:36px minmax(32px,1fr) 40px 41px 44px 48px;gap:3px;padding-left:5px;padding-right:5px}
@@ -2667,6 +2691,311 @@
     toast('builder autosave restored', 'ok');
   }
 
+  const NUDGE_PAD_PREF_KEY = 'banger.builder.nudge.v7';
+  const NUDGE_PAD_EXPANDED_SIZE = {width:154,height:201};
+  let nudgePadPreference = null;
+  let nudgePadDrag = null;
+
+  function loadNudgePadPreferenceV7() {
+    if (nudgePadPreference) return nudgePadPreference;
+    const mobile = !!(window.matchMedia && window.matchMedia('(max-width: 560px)').matches);
+    const mode = mobile ? 'mobile' : 'desktop';
+    const fallback = {x:0,y:1,collapsed:mobile,mode};
+    try {
+      const stored = JSON.parse(localStorage.getItem(NUDGE_PAD_PREF_KEY) || 'null');
+      if (stored && Number.isFinite(stored.x) && Number.isFinite(stored.y)) {
+        nudgePadPreference = {
+          x:Math.max(0,Math.min(1,stored.x)),
+          y:Math.max(0,Math.min(1,stored.y)),
+          collapsed:stored.mode === mode ? !!stored.collapsed : mobile,
+          mode
+        };
+      }
+    } catch (_) {}
+    if (!nudgePadPreference) nudgePadPreference = fallback;
+    return nudgePadPreference;
+  }
+
+  function saveNudgePadPreferenceV7() {
+    try { localStorage.setItem(NUDGE_PAD_PREF_KEY, JSON.stringify(loadNudgePadPreferenceV7())); } catch (_) {}
+  }
+
+  function nudgePadBoundsV7(pad) {
+    const screen = document.getElementById('bscr');
+    const workspace = screen && screen.querySelector('.stagewrap');
+    if (!screen || !screen.classList.contains('on') || !workspace || !pad) return null;
+    const workspaceRect = workspace.getBoundingClientRect();
+    const padRect = pad.getBoundingClientRect();
+    const measuredSize = pad.__bwNudgeMeasuredSize;
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport ? viewport.offsetLeft : 0;
+    const viewportTop = viewport ? viewport.offsetTop : 0;
+    const viewportRight = viewportLeft + (viewport ? viewport.width : window.innerWidth);
+    const viewportBottom = viewportTop + (viewport ? viewport.height : window.innerHeight);
+    const margin = 6;
+    const padWidth = measuredSize && measuredSize.width || padRect.width || pad.offsetWidth || (pad.classList.contains('bw-nudge-collapsed') ? 54 : NUDGE_PAD_EXPANDED_SIZE.width);
+    const padHeight = measuredSize && measuredSize.height || padRect.height || pad.offsetHeight || (pad.classList.contains('bw-nudge-collapsed') ? 54 : NUDGE_PAD_EXPANDED_SIZE.height);
+    const visibleLeft = Math.max(workspaceRect.left, viewportLeft);
+    const visibleTop = Math.max(workspaceRect.top, viewportTop);
+    const visibleRight = Math.min(workspaceRect.right, viewportRight);
+    let visibleBottom = Math.min(workspaceRect.bottom, viewportBottom);
+    const selectionTool = screen.querySelector('#bd_ov .tool');
+    if (selectionTool && window.matchMedia && window.matchMedia('(max-width: 520px)').matches) {
+      const toolRect = selectionTool.getBoundingClientRect();
+      if (toolRect.width && toolRect.height && toolRect.top > visibleTop) visibleBottom = Math.min(visibleBottom,toolRect.top-margin);
+    }
+    let minX = visibleLeft + margin;
+    let minY = visibleTop + margin;
+    let maxX = visibleRight - padWidth - margin;
+    let maxY = visibleBottom - padHeight - margin;
+    const fits = maxX >= minX && maxY >= minY;
+    if (maxX < minX) maxX = minX;
+    if (maxY < minY) maxY = minY;
+    return {screen,workspace,pad,minX,minY,maxX,maxY,fits,visibleWidth:Math.max(0,visibleRight-visibleLeft),visibleHeight:Math.max(0,visibleBottom-visibleTop)};
+  }
+
+  function captureNudgePadPositionV7(pad) {
+    const bounds = nudgePadBoundsV7(pad);
+    if (!bounds) return loadNudgePadPreferenceV7();
+    const current = loadNudgePadPreferenceV7();
+    const left = parseFloat(pad.style.left);
+    const top = parseFloat(pad.style.top);
+    if (Number.isFinite(left)) current.x = bounds.maxX === bounds.minX ? 0 : Math.max(0,Math.min(1,(left-bounds.minX)/(bounds.maxX-bounds.minX)));
+    if (Number.isFinite(top)) current.y = bounds.maxY === bounds.minY ? 0 : Math.max(0,Math.min(1,(top-bounds.minY)/(bounds.maxY-bounds.minY)));
+    return current;
+  }
+
+  function updateNudgePadA11yV7(pad, collapsed, autoCollapsed) {
+    const dragHandle = pad.querySelector('[data-nudge-drag]');
+    if (dragHandle) {
+      dragHandle.setAttribute('aria-expanded', String(!collapsed));
+      dragHandle.setAttribute('aria-label', collapsed
+        ? (autoCollapsed ? 'Open Nudge controls in Layers or drag this shortcut' : 'Open and move Nudge controls')
+        : 'Drag Nudge controls');
+      dragHandle.title = collapsed
+        ? (autoCollapsed ? 'Tap for Nudge controls in Layers · drag to move' : 'Tap to open · drag to move')
+        : 'Drag to move the Nudge controls';
+    }
+    const collapse = pad.querySelector('[data-nudge-collapse]');
+    if (collapse) collapse.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+  }
+
+  function expandedNudgeFitsV7(pad) {
+    const previousSize = pad.__bwNudgeMeasuredSize;
+    pad.__bwNudgeMeasuredSize = NUDGE_PAD_EXPANDED_SIZE;
+    try {
+      const bounds = nudgePadBoundsV7(pad);
+      return !!(bounds && bounds.fits);
+    } finally {
+      if (previousSize) pad.__bwNudgeMeasuredSize = previousSize;
+      else delete pad.__bwNudgeMeasuredSize;
+    }
+  }
+
+  function constrainNudgePadV7() {
+    const pad = document.getElementById('bd_pad');
+    const screen = document.getElementById('bscr');
+    if (!screen || !screen.classList.contains('on') || !pad || !pad.classList.contains('bw-nudge-pad') || !pad.classList.contains('on') || nudgePadDrag) return;
+    const state = loadNudgePadPreferenceV7();
+    const mode = window.matchMedia && window.matchMedia('(max-width: 560px)').matches ? 'mobile' : 'desktop';
+    if (state.mode !== mode) {
+      state.mode = mode;
+      state.collapsed = mode === 'mobile';
+      saveNudgePadPreferenceV7();
+    }
+    const autoCollapsed = !state.collapsed && !expandedNudgeFitsV7(pad);
+    const effectiveCollapsed = !!state.collapsed || autoCollapsed;
+    const wasEffectiveCollapsed = pad.classList.contains('bw-nudge-collapsed');
+    const active = document.activeElement;
+    pad.classList.toggle('bw-nudge-auto-collapsed', autoCollapsed);
+    pad.classList.toggle('bw-nudge-collapsed', effectiveCollapsed);
+    updateNudgePadA11yV7(pad,effectiveCollapsed,autoCollapsed);
+    const dragHandle = pad.querySelector('[data-nudge-drag]');
+    if (!wasEffectiveCollapsed && effectiveCollapsed && dragHandle && active && pad.contains(active) && active !== dragHandle) {
+      dragHandle.focus({preventScroll:true});
+    }
+    const bounds = nudgePadBoundsV7(pad);
+    if (!bounds) return;
+    const left = bounds.minX + (bounds.maxX-bounds.minX)*Math.max(0,Math.min(1,state.x));
+    const top = bounds.minY + (bounds.maxY-bounds.minY)*Math.max(0,Math.min(1,state.y));
+    pad.style.left = Math.round(left) + 'px';
+    pad.style.top = Math.round(top) + 'px';
+    pad.style.right = 'auto';
+    pad.style.bottom = 'auto';
+  }
+
+  function setNudgePadCollapsedV7(pad, collapsed) {
+    const active = document.activeElement;
+    captureNudgePadPositionV7(pad).collapsed = !!collapsed;
+    pad.classList.remove('bw-nudge-auto-collapsed');
+    pad.classList.toggle('bw-nudge-collapsed', !!collapsed);
+    updateNudgePadA11yV7(pad,!!collapsed,false);
+    saveNudgePadPreferenceV7();
+    requestAnimationFrame(() => {
+      constrainNudgePadV7();
+      const dragHandle = pad.querySelector('[data-nudge-drag]');
+      if (collapsed && dragHandle && active && pad.contains(active) && active !== dragHandle) dragHandle.focus({preventScroll:true});
+    });
+  }
+
+  function openNudgePadV7(pad) {
+    if (expandedNudgeFitsV7(pad)) {
+      setNudgePadCollapsedV7(pad,false);
+      return;
+    }
+    openBuilderSheet();
+    toast('Nudge controls opened in Layers for this screen size', 'warn');
+  }
+
+  function moveNudgePadByKeyboardV7(pad, dx, dy) {
+    const bounds = nudgePadBoundsV7(pad);
+    if (!bounds) return;
+    const left = Math.max(bounds.minX,Math.min(bounds.maxX,(parseFloat(pad.style.left)||bounds.minX)+dx));
+    const top = Math.max(bounds.minY,Math.min(bounds.maxY,(parseFloat(pad.style.top)||bounds.minY)+dy));
+    pad.style.left = Math.round(left) + 'px';
+    pad.style.top = Math.round(top) + 'px';
+    captureNudgePadPositionV7(pad);
+    saveNudgePadPreferenceV7();
+  }
+
+  function installMovableNudgePadV7() {
+    const pad = document.getElementById('bd_pad');
+    const stage = document.getElementById('bd_stage');
+    const screen = document.getElementById('bscr');
+    if (!pad || !stage || !screen) return;
+    if (pad.dataset.nudgeMovable === '1') { constrainNudgePadV7(); return; }
+    pad.dataset.nudgeMovable = '1';
+    if (pad.parentElement !== screen) screen.appendChild(pad);
+    pad.classList.add('bw-nudge-pad');
+    pad.setAttribute('role','group');
+    pad.setAttribute('aria-label','Nudge selected layer');
+
+    const legacyButtons = Array.from(pad.children).filter(node => node.tagName === 'BUTTON');
+    const grid = document.createElement('div');
+    grid.className = 'bw-nudge-grid';
+    const labels = ['', 'Nudge layer up', '', 'Nudge layer left', '', 'Nudge layer right', '', 'Nudge layer down', ''];
+    const directions = {1:[0,-1],3:[-1,0],5:[1,0],7:[0,1]};
+    legacyButtons.forEach((button,index) => {
+      button.type = 'button';
+      if (directions[index]) {
+        button.setAttribute('aria-label',labels[index]);
+        button.onclick = () => {
+          const format = window.__bapi.fmt();
+          const stageRect = stage.getBoundingClientRect();
+          const stepX = Math.max(12,Math.round((format[1]/Math.max(1,stageRect.width))*8));
+          const stepY = Math.max(12,Math.round((format[2]/Math.max(1,stageRect.height))*8));
+          const direction = directions[index];
+          mutateSelected((data,i) => {
+            data[i].x = (+data[i].x||0) + direction[0]*stepX;
+            data[i].y = (+data[i].y||0) + direction[1]*stepY;
+          });
+        };
+      } else if (button.classList.contains('mid')) {
+        button.textContent = 'step';
+        button.setAttribute('aria-hidden','true');
+        button.tabIndex = -1;
+        button.disabled = true;
+      } else {
+        button.classList.add('bw-nudge-spacer');
+        button.setAttribute('aria-hidden','true');
+        button.tabIndex = -1;
+        button.disabled = true;
+      }
+      grid.appendChild(button);
+    });
+
+    const head = document.createElement('div');
+    head.className = 'bw-nudge-head';
+    head.innerHTML = '<button type="button" class="bw-nudge-drag" data-nudge-drag aria-label="Drag Nudge controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg><span>move</span></button>' +
+      '<button type="button" class="bw-nudge-reset" data-nudge-reset aria-label="Dock Nudge controls at the lower left" title="Dock lower left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14h14"/><path d="M9 15l-4 4M9 19H5v-4"/></svg></button>' +
+      '<button type="button" class="bw-nudge-collapse" data-nudge-collapse aria-label="Collapse Nudge controls" title="Collapse Nudge controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>';
+    pad.appendChild(head);
+    pad.appendChild(grid);
+
+    const initialState = loadNudgePadPreferenceV7();
+    pad.classList.toggle('bw-nudge-collapsed', !!initialState.collapsed);
+    updateNudgePadA11yV7(pad,!!initialState.collapsed,false);
+
+    const dragHandle = head.querySelector('[data-nudge-drag]');
+    const endDrag = event => {
+      if (!nudgePadDrag || event.pointerId !== nudgePadDrag.pointerId) return;
+      const moved = nudgePadDrag.moved;
+      nudgePadDrag = null;
+      pad.classList.remove('bw-nudge-dragging');
+      try { if (dragHandle.hasPointerCapture(event.pointerId)) dragHandle.releasePointerCapture(event.pointerId); } catch (_) {}
+      captureNudgePadPositionV7(pad);
+      saveNudgePadPreferenceV7();
+      if (!moved && event.type === 'pointerup' && pad.classList.contains('bw-nudge-collapsed')) openNudgePadV7(pad);
+      if (event.cancelable) event.preventDefault();
+      event.stopPropagation();
+    };
+    dragHandle.addEventListener('pointerdown', event => {
+      if (event.isPrimary === false || (event.button != null && event.button !== 0)) return;
+      const bounds = nudgePadBoundsV7(pad);
+      if (!bounds) return;
+      const rect = pad.getBoundingClientRect();
+      nudgePadDrag = {
+        pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,
+        left:rect.left,top:rect.top,moved:false
+      };
+      try { dragHandle.setPointerCapture(event.pointerId); } catch (_) {}
+      pad.classList.add('bw-nudge-dragging');
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragHandle.addEventListener('pointermove', event => {
+      if (!nudgePadDrag || event.pointerId !== nudgePadDrag.pointerId) return;
+      const dx = event.clientX-nudgePadDrag.startX,dy = event.clientY-nudgePadDrag.startY;
+      if (!nudgePadDrag.moved && Math.hypot(dx,dy) <= 8) return;
+      nudgePadDrag.moved = true;
+      const bounds = nudgePadBoundsV7(pad);
+      if (!bounds) return;
+      pad.style.left = Math.round(Math.max(bounds.minX,Math.min(bounds.maxX,nudgePadDrag.left+dx))) + 'px';
+      pad.style.top = Math.round(Math.max(bounds.minY,Math.min(bounds.maxY,nudgePadDrag.top+dy))) + 'px';
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    dragHandle.addEventListener('pointerup',endDrag);
+    dragHandle.addEventListener('pointercancel',endDrag);
+    dragHandle.addEventListener('lostpointercapture',endDrag);
+    dragHandle.addEventListener('keydown', event => {
+      const step = event.shiftKey ? 24 : 12;
+      if (event.key === 'ArrowLeft') moveNudgePadByKeyboardV7(pad,-step,0);
+      else if (event.key === 'ArrowRight') moveNudgePadByKeyboardV7(pad,step,0);
+      else if (event.key === 'ArrowUp') moveNudgePadByKeyboardV7(pad,0,-step);
+      else if (event.key === 'ArrowDown') moveNudgePadByKeyboardV7(pad,0,step);
+      else if ((event.key === 'Enter' || event.key === ' ') && pad.classList.contains('bw-nudge-collapsed')) openNudgePadV7(pad);
+      else if (event.key === 'Escape' && !pad.classList.contains('bw-nudge-collapsed')) setNudgePadCollapsedV7(pad,true);
+      else return;
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    head.querySelector('[data-nudge-collapse]').onclick = event => { event.stopPropagation();setNudgePadCollapsedV7(pad,true); };
+    head.querySelector('[data-nudge-reset]').onclick = event => {
+      event.stopPropagation();
+      const state = loadNudgePadPreferenceV7();
+      state.x = 0; state.y = 1;
+      saveNudgePadPreferenceV7();
+      constrainNudgePadV7();
+    };
+
+    const classObserver = new MutationObserver(() => {
+      if (pad.classList.contains('on')) requestAnimationFrame(constrainNudgePadV7);
+    });
+    classObserver.observe(pad,{attributes:true,attributeFilter:['class']});
+    if (window.ResizeObserver) {
+      const resizeObserver = new ResizeObserver(() => requestAnimationFrame(constrainNudgePadV7));
+      resizeObserver.observe(screen.querySelector('.stagewrap'));
+    }
+    window.addEventListener('resize',constrainNudgePadV7,{passive:true});
+    window.addEventListener('orientationchange',constrainNudgePadV7,{passive:true});
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize',constrainNudgePadV7,{passive:true});
+      window.visualViewport.addEventListener('scroll',constrainNudgePadV7,{passive:true});
+    }
+    constrainNudgePadV7();
+  }
+
   function constrainBuilderControls() {
     const stage=document.getElementById('bd_stage'),overlay=document.getElementById('bd_ov');
     if(!stage||!overlay) return;
@@ -2678,6 +3007,7 @@
       top=Math.max(4,Math.min(Math.max(4,stageH-toolH-5),top));
       tool.style.left=left+'px';tool.style.top=top+'px';
     }
+    constrainNudgePadV7();
   }
 
   function builderFormatTuple(id) {
@@ -2742,6 +3072,7 @@
     const screen = document.getElementById('bscr');
     if (!screen || screen.dataset.enhanced === ENH_VERSION) return;
     screen.dataset.enhanced = ENH_VERSION;
+    installMovableNudgePadV7();
     const top = screen.querySelector('.top');
     const exportButton = document.getElementById('bd_expBtn');
     if (top && exportButton) {
@@ -2909,7 +3240,7 @@
         #wscr .bw-row{display:grid!important;grid-template-columns:1fr;gap:0!important}
         #wscr .bw-row>div{min-width:0;width:100%;max-width:none!important}
         #wscr .bw-in{font-size:14px}
-        #bscr #bd_pad{display:none!important}
+        #bscr #bd_pad.bw-nudge-pad.on{display:block!important}
         #bscr #bd_ov .tool{position:fixed!important;left:50%!important;right:auto!important;top:auto!important;
           bottom:calc(94px + env(safe-area-inset-bottom))!important;transform:translateX(-50%)!important;
           max-width:calc(100vw - 28px)!important;padding:7px!important;border:1px solid rgba(255,255,255,.82)!important;
