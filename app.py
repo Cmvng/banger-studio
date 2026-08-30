@@ -309,7 +309,402 @@ def _jsonld_evidence(raw):
         node_type = node.get('@type', '')
         types = node_type if isinstance(node_type, list) else [node_type]
         is_article = inherited_article or any(str(item).lower() in (
-            'article', 'newsarticle', 'blogposting', 'report', 'techor {}).items()):
+            'article', 'newsarticle', 'blogposting', 'report', 'techarticle'
+        ) for item in types)
+        if is_article:
+            for key in ('articleBody', 'description'):
+                value = node.get(key)
+                if isinstance(value, str):
+                    value = _readable(value)
+                    if _meaningful_evidence(value):
+                        excerpts.append(value[:2400])
+        for key, value in node.items():
+            if key in ('articleBody', 'description'):
+                continue
+            if isinstance(value, (dict, list)):
+                visit(value, is_article and key in ('@graph', 'mainEntity', 'hasPart'))
+
+    for body in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', raw or '', re.I | re.S):
+        try:
+            visit(json.loads(html.unescape(body).strip()))
+        except Exception:
+            continue
+    unique = []
+    seen = set()
+    for value in excerpts:
+        key = re.sub(r'\W+', '', value.lower())[:180]
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(value)
+    return unique[:8]
+
+
+def _extract_link_source(source_url, fetcher=None):
+    """Read the exact pasted page or X post instead of silently collapsing it to a domain/profile."""
+    source_url = _normalise_source_url(source_url)
+    get = fetcher or fetch
+    out = {'url': source_url, 'canonical_url': '', 'kind': '', 'status': 'invalid', 'title': '',
+           'author': '', 'excerpts': [], 'images': [], 'x_handle': ''}
+    if not source_url or not _safe_public_url(source_url):
+        return out
+    try:
+        parsed = urlparse(source_url)
+        host = (parsed.hostname or '').lower().removeprefix('www.')
+    except Exception:
+        return out
+
+    if host in ('x.com', 'twitter.com', 'mobile.twitter.com', 'mobile.x.com'):
+        parts = [p for p in parsed.path.split('/') if p]
+        out['x_handle'] = re.sub(r'[^A-Za-z0-9_]', '', parts[0]) if parts else ''
+        status = re.search(r'/status/(\d+)', parsed.path)
+        if status:
+            out['kind'] = 'exact X post'
+            out['status'] = 'unreadable'
+            raw = get('https://cdn.syndication.twimg.com/tweet-result?id=%s&lang=en' % status.group(1), timeout=12)
+            if raw:
+                try:
+                    item = json.loads(raw)
+                    body = _readable(item.get('text') or '')
+                    user = item.get('user') or {}
+                    out['author'] = '@' + str(user.get('screen_name') or out['x_handle'])
+                    out['title'] = str(user.get('name') or out['author']) + ' on X'
+                    if body: out['excerpts'].append(body[:1800])
+                    for media in (item.get('mediaDetails') or [])[:4]:
+                        url = media.get('media_url_https') or media.get('media_url')
+                        if url: out['images'].append(url)
+                except Exception:
+                    pass
+            if not out['excerpts']:
+                raw = get('https://publish.twitter.com/oembed?omit_script=1&dnt=1&url=' + quote(source_url), timeout=12)
+                if raw:
+                    try:
+                        item = json.loads(raw)
+                        body = _html_text(item.get('html') or '')
+                        out['author'] = _readable(item.get('author_name') or '')
+                        out['title'] = (out['author'] + ' on X').strip()
+                        if body: out['excerpts'].append(body[:1800])
+                    except Exception:
+                        pass
+            if out['excerpts']:
+                out['status'] = 'fetched'
+        else:
+            out['kind'] = 'X profile'
+            out['status'] = 'profile_only'
+        return out
+
+    out['kind'] = 'provided webpage'
+    out['status'] = 'unreadable'
+    raw = get(source_url, timeout=15)
+    if not raw:
+        return out
+    if _looks_blocked_page(raw):
+        out['status'] = 'blocked'
+        return out
+    out['status'] = 'fetched'
+    out['_raw_html'] = raw
+    out['canonical_url'] = _canonical_url(raw, source_url)
+    title = re.search(r'<title[^>]*>(.*?)</title>', raw, re.I | re.S)
+    meta_title = _meta_value(raw, 'og:title', 'twitter:title')
+    out['title'] = _html_text(meta_title or (title.group(1) if title else ''))
+    description = _meta_value(raw, 'description', 'og:description', 'twitter:description')
+    if description:
+        value = _html_text(description)
+        if _meaningful_evidence(value): out['excerpts'].append(value[:1000])
+    out['excerpts'].extend(_jsonld_evidence(raw))
+    for match in re.finditer(r'"articleBody"\s*:\s*"((?:[^"\\]|\\.)*)"', raw, re.I):
+        try: value = _readable(json.loads('"' + match.group(1) + '"'))
+        except Exception: value = ''
+        if len(value) > 80: out['excerpts'].append(value[:2400])
+    article = re.search(r'<article[^>]*>(.*?)</article>', raw, re.I | re.S)
+    scope = article.group(1) if article else raw
+    for para in re.findall(r'<p[^>]*>(.*?)</p>', scope, re.I | re.S):
+        value = _html_text(para)
+        if len(value) > 55: out['excerpts'].append(value[:650])
+        if len(out['excerpts']) >= 8: break
+    unique = []
+    for value in out['excerpts']:
+        key = re.sub(r'\W+', '', value.lower())[:180]
+        if key and all(key != prior[0] for prior in unique): unique.append((key, value))
+    out['excerpts'] = [value for _, value in unique][:8]
+    og_image = _meta_value(raw, 'og:image', 'twitter:image')
+    if og_image: out['images'].append(urljoin(source_url, og_image))
+    return out
+
+
+def gather(project, root_url, assets_dir):
+    """Return a source-aware dossier for one project."""
+    os.makedirs(assets_dir, exist_ok=True)
+    deadline = time.monotonic() + RESEARCH_DEADLINE_SECONDS
+
+    def rfetch(url, binary=False, timeout=10):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        return fetch(url, binary=binary, timeout=max(0.25, min(float(timeout), remaining)))
+
+    project = _readable(str(project or ''))[:120]
+    source_urls = _source_urls(root_url)
+    supplied_root = source_urls[0] if source_urls else ''
+    link_sources = [_extract_link_source(url, fetcher=rfetch) for url in source_urls]
+    link_source = link_sources[0] if link_sources else {
+        'url': '', 'canonical_url': '', 'kind': '', 'status': 'invalid', 'title': '', 'author': '',
+        'excerpts': [], 'images': [], 'x_handle': ''
+    }
+    slug_guess = re.sub(r'[^a-z0-9]', '', project.lower())
+    x_handle = next((item.get('x_handle', '') for item in link_sources if item.get('x_handle')), '')
+    webpage_source = next((item for item in link_sources if item.get('kind') == 'provided webpage'), None)
+    root_url = ((webpage_source or {}).get('canonical_url') or (webpage_source or {}).get('url') or '')
+
+    # Discover the canonical CoinGecko record instead of assuming the project name is the API slug.
+    coin_slug = ''
+    coin_profile = None
+    search = rfetch('https://api.coingecko.com/api/v3/search?query=' + quote(project))
+    if search:
+        try:
+            rows = json.loads(search).get('coins', [])[:12]
+            q = re.sub(r'[^a-z0-9]', '', project.lower())
+            def score(row):
+                name = re.sub(r'[^a-z0-9]', '', str(row.get('name', '')).lower())
+                symbol = re.sub(r'[^a-z0-9]', '', str(row.get('symbol', '')).lower())
+                cid = re.sub(r'[^a-z0-9]', '', str(row.get('id', '')).lower())
+                if q and q in (name, cid): return 0
+                if q and q == symbol: return 1
+                return 99
+            rows = sorted(rows, key=score)
+            if rows and score(rows[0]) <= 1:
+                coin_slug = str(rows[0].get('id', ''))
+        except Exception:
+            pass
+    if not coin_slug:
+        coin_slug = slug_guess
+    if coin_slug:
+        raw_profile = rfetch('https://api.coingecko.com/api/v3/coins/%s?localization=false&tickers=false&community_data=false&developer_data=false' % quote(coin_slug))
+        if raw_profile:
+            try:
+                coin_profile = json.loads(raw_profile)
+                links = coin_profile.get('links') or {}
+                profile_x = re.sub(r'[^A-Za-z0-9_]', '', str(links.get('twitter_screen_name') or ''))
+                # A supplied X identity is primary evidence. Never attach market data from a conflicting token profile.
+                if x_handle and profile_x and profile_x.lower() != x_handle.lower():
+                    coin_profile = None
+                    raise ValueError('CoinGecko X identity does not match supplied source')
+                homes = [u for u in (links.get('homepage') or []) if str(u).startswith(('http://', 'https://'))]
+                if not root_url and homes: root_url = homes[0]
+                if not x_handle: x_handle = profile_x
+            except Exception:
+                coin_profile = None
+
+    all_excerpts = [value for item in link_sources for value in (item.get('excerpts') or [])]
+    source_kind = 'multiple sources' if len(link_sources) > 1 else link_source.get('kind', '')
+    source_status = 'multiple' if len(link_sources) > 1 else link_source.get('status', 'no_source')
+    D = {'project': project, 'root': root_url, 'source_url': supplied_root, 'source_urls': source_urls,
+         'source_kind': source_kind, 'source_status': source_status,
+         'source_errors': [{'url': item.get('url', ''), 'status': item.get('status', 'unreadable')}
+                           for item in link_sources if item.get('status') in ('invalid', 'unreadable', 'blocked')],
+         'source_excerpt': all_excerpts, 'when': time.strftime('%Y-%m-%d %H:%M'),
+         'researched_at_epoch': int(time.time()), 'research_key': _research_key(project, source_urls),
+         'facts': [('project name', project)] if project else [], 'news': [], 'walked': [], 'x_pulse': [],
+         'images': [], 'kept': [], 'sources': [], 'research_status': 'partial'}
+
+    def add_source(kind, url, status):
+        key = str(url or '').lower().rstrip('/')
+        if url and not any(str(item.get('url', '')).lower().rstrip('/') == key for item in D['sources']):
+            D['sources'].append({'kind': kind, 'url': url, 'status': status})
+
+    for item in link_sources:
+        add_source(item.get('kind') or 'provided source', item.get('url'), item.get('status') or 'user supplied')
+        canonical = item.get('canonical_url')
+        if canonical and canonical.lower().rstrip('/') != str(item.get('url', '')).lower().rstrip('/'):
+            add_source('canonical webpage', canonical, 'canonical')
+        if item.get('title'): D['facts'].append(('source title', item['title'][:240]))
+        if item.get('author'): D['facts'].append(('source author', item['author'][:120]))
+        for image_url in item.get('images', []): D['images'].append(('source image', image_url))
+    if root_url and not any(str(item.get('url', '')).lower().rstrip('/') == root_url.lower().rstrip('/') for item in D['sources']):
+        add_source('official site', root_url, 'primary')
+    if x_handle and not any(item.get('kind') in ('exact X post', 'X profile') for item in D['sources']):
+        add_source('X profile', 'https://x.com/' + x_handle, 'discovered')
+    if coin_profile:
+        add_source('CoinGecko', 'https://www.coingecko.com/en/coins/' + coin_slug, 'secondary')
+        desc = _readable(_clean(((coin_profile.get('description') or {}).get('en') or '')))
+        if desc: D['facts'].append(('project description', desc[:520]))
+
+    # 1 — the project's own site, when a valid project-specific site was supplied or discovered.
+    walked_n=[0]
+    attempted_webpage = any(item.get('kind') == 'provided webpage' for item in link_sources)
+    html = next((item.get('_raw_html') for item in link_sources
+                 if item.get('_raw_html') and item.get('kind') == 'provided webpage' and item.get('status') == 'fetched'), None)
+    html = html or (rfetch(root_url) if root_url and not attempted_webpage else None)
+    if html:
+        parsed_root = urlparse(root_url)
+        base_origin = '%s://%s' % (parsed_root.scheme, parsed_root.netloc)
+        t = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
+        site_description = _html_text(_meta_value(html, 'description', 'og:description', 'twitter:description'))
+        if t: D['facts'].append(('site title', _html_text(t.group(1))))
+        if site_description: D['facts'].append(('site description', site_description[:520]))
+        share_image = _meta_value(html, 'og:image', 'twitter:image')
+        if share_image: D['images'].append(('share image', urljoin(root_url, share_image)))
+        txt = re.sub(r'<[^>]+>', ' ', html)
+        for m in re.finditer(r'(20\d\d/\d{1,2}/\d{1,2})\s*·?\s*([A-Z][A-Za-z0-9 $&\.\-]{6,60})', txt):
+            item = (m.group(1), m.group(2).strip().title())
+            if item not in D['news']: D['news'].append(item)
+        links = []
+        for m in re.finditer(r'href="(/[a-z\-/]{3,40})"', html):
+            u = m.group(1)
+            if u not in links and 'favicon' not in u: links.append(u)
+        for u in links:
+            if walked_n[0] >= 6: break
+            if any(k in u for k in ['blog', 'news', 'ecosystem', 'about', 'docs']):
+                h = rfetch(base_origin + u)
+                if h:
+                    heads = [_clean(x) for x in re.findall(r'<h[12][^>]*>(.*?)</h[12]>', h)]
+                    heads = [x for x in heads if len(x) > 4][:5]
+                    if heads:
+                        D['walked'].append({'page': u.strip('/').replace('-', ' '), 'points': heads}); walked_n[0]+=1
+        for m in list(re.finditer(r'src="(https?://[^"]+\.(?:png|jpg|webp|svg))"', html))[:6]:
+            D['images'].append(('site asset', m.group(1)))
+
+    # 2 — live numbers (free public APIs; canonical slug discovered above)
+    slug = coin_slug or slug_guess
+    got_token = False
+    cg = json.dumps(coin_profile) if coin_profile else None
+    if cg:
+        try:
+            j = json.loads(cg); md = j.get('market_data', {})
+            def g(path, d=0):
+                x = md
+                for k in path: x = (x or {}).get(k, {})
+                return x if x not in ({}, None) else d
+            price = g(['current_price', 'usd'], 0)
+            if price:
+                got_token = True
+                D['facts'] += [
+                    ('price usd', '$%s' % price),
+                    ('market cap', '$%s' % f"{int(g(['market_cap', 'usd'], 0)):,}"),
+                    ('24h change', '%.2f%%' % (md.get('price_change_percentage_24h') or 0)),
+                    ('all-time high', '$%s' % g(['ath', 'usd'])),
+                    ('down from ath', '%.1f%%' % (g(['ath_change_percentage', 'usd'], 0))),
+                ]
+                img = j.get('image', {}).get('large')
+                if img: D['images'].append(('token logo', img))
+        except Exception:
+            pass
+    if not got_token:
+        D['facts'].append(('token price', 'no token found (probably none exists)'))
+    ll = rfetch('https://api.llama.fi/v2/chains')
+    if ll:
+        try:
+            rows = json.loads(ll)
+            hit = [r for r in rows if slug in ((r.get('name') or '') + (r.get('gecko_id') or '')).lower().replace(' ', '')]
+            if hit:
+                D['facts'].append(('TVL', '$%s' % f"{int(hit[0].get('tvl') or 0):,}"))
+        except Exception:
+            pass
+
+    # 3 — the project's own X posts (public syndication, no login)
+    social_slug = x_handle or slug
+    syn = rfetch('https://syndication.twitter.com/srv/timeline-profile/screen-name/%s' % quote(social_slug)) if social_slug else None
+    if syn:
+        texts = []
+        try:
+            # syndication returns JSON; parse it so unicode decodes correctly
+            for m in re.finditer(r'"full_text":"((?:[^"\\]|\\.)*)"', syn):
+                raw = '"' + m.group(1) + '"'
+                try: texts.append(json.loads(raw))
+                except Exception: pass
+        except Exception:
+            pass
+        for t in texts[:6]:
+            t = re.sub(r'https?://\S+', '', t).strip()
+            t = _readable(t)
+            if len(t) > 12: D['x_pulse'].append(('@' + social_slug, t[:200]))
+
+    # 4 — wider X chatter via public mirrors (proxy helps a lot here)
+    for m in ['xcancel.com', 'nitter.poast.org', 'nitter.privacydev.net', 'lightbrd.com']:
+        h = rfetch('https://%s/search?q=%s&f=tweets' % (m, slug), timeout=6)
+        if h and 'tweet-content' in h:
+            for tm in re.findall(r'tweet-content[^>]*>(.*?)</div>', h, re.S)[:6]:
+                txt = _readable(_clean(tm))
+                if len(txt) > 15: D['x_pulse'].append(('mirror', txt[:200]))
+            break
+
+    # 5 — download the gathered images for the designs
+    for label, u in D['images'][:10]:
+        b = rfetch(u, binary=True)
+        if b and len(b) > 500:
+            ext = '.svg' if 'svg' in u else '.png' if 'png' in u else '.jpg'
+            fn = os.path.join(assets_dir, hashlib.md5(u.encode()).hexdigest()[:10] + ext)
+            try:
+                open(fn, 'wb').write(b)
+                D['kept'].append({'label': label, 'file': os.path.basename(fn)})
+            except Exception:
+                pass
+
+    weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
+    meaningful = [f for f in D['facts'] if f[0] not in weak_labels and _meaningful_evidence('%s %s' % f)]
+    excerpts = [value for value in (D.get('source_excerpt') or []) if _meaningful_evidence(value)]
+    news = [item for item in (D.get('news') or []) if _meaningful_evidence(' '.join(map(str, item)))]
+    walked = [item for item in (D.get('walked') or [])
+              if any(_meaningful_evidence(point) for point in (item.get('points') or []))]
+    # Mirror chatter is context, not project evidence. Only the project's own timeline can unlock writing.
+    owned_pulse = [item for item in (D.get('x_pulse') or [])
+                   if item and item[0] != 'mirror' and _meaningful_evidence(item[1])]
+    D['source_excerpt'] = excerpts
+    evidence_count = len(meaningful) + len(excerpts) + len(news) + len(walked) + len(owned_pulse)
+    D['writing_ready'] = evidence_count > 0
+    D['research_timed_out'] = time.monotonic() >= deadline
+    if evidence_count and D['sources']: D['research_status'] = 'ready'
+    elif evidence_count: D['research_status'] = 'limited'
+    elif D['research_timed_out']: D['research_status'] = 'timed_out'
+    elif any(item.get('status') == 'blocked' for item in D.get('source_errors', [])): D['research_status'] = 'blocked'
+    elif D.get('source_errors'): D['research_status'] = 'unreadable'
+    return D
+
+
+def build_brief(D):
+    """Collapse the dossier into the tiny object the writer reads (keeps API cost low)."""
+    facts = dict(D['facts'])
+    weak_labels = ('project name', 'token price', 'source title', 'source author', 'site title')
+    return {
+        'project': D['project'],
+        'official_source': D.get('root', ''),
+        'source_url': D.get('source_url', ''),
+        'source_urls': D.get('source_urls', []),
+        'source_kind': D.get('source_kind', ''),
+        'source_status': D.get('source_status', ''),
+        'source_errors': D.get('source_errors', [])[:4],
+        'source_excerpt': [value for value in D.get('source_excerpt', []) if _meaningful_evidence(value)][:8],
+        'research_status': D.get('research_status', 'partial'),
+        'research_timed_out': bool(D.get('research_timed_out')),
+        'research_key': D.get('research_key', ''),
+        'researched_at_epoch': D.get('researched_at_epoch', 0),
+        'writing_ready': bool(D.get('writing_ready')),
+        'sources': D.get('sources', [])[:8],
+        'one_liner': facts.get('site description') or facts.get('project description', ''),
+        'verified_facts': [{'label': k, 'value': v, 'status': 'confirmed'} for k, v in D['facts']
+                           if k not in weak_labels and _meaningful_evidence('%s %s' % (k, v))][:16],
+        'live_numbers': {k: v for k, v in D['facts']
+                         if any(w in k for w in ['price', 'cap', 'change', 'TVL', 'ath', 'high'])},
+        'news_feed': ['%s · %s' % (d, t) for d, t in D['news']][:8],
+        'pages_read': D['walked'][:8],
+        'x_pulse': [{'src': s, 'text': t} for s, t in D['x_pulse']][:10],
+        'assets_for_design': D['kept'],
+    }
+
+
+_PASTED_URL = _SOURCE_URL_RE
+
+
+def _brief_has_evidence(brief):
+    """Re-check stored briefs server-side instead of trusting a UI flag."""
+    if not isinstance(brief, dict) or brief.get('writing_ready') is False:
+        return False
+    if any(_meaningful_evidence(value) for value in (brief.get('source_excerpt') or [])):
+        return True
+    if any(_meaningful_evidence('%s %s' % (item.get('label', ''), item.get('value', '')))
+           for item in (brief.get('verified_facts') or []) if isinstance(item, dict)):
+        return True
+    if any(_meaningful_evidence('%s %s' % (key, value))
+           for key, value in (brief.get('live_numbers') or {}).items()):
         return True
     if any(_meaningful_evidence(value) for value in (brief.get('news_feed') or [])):
         return True
